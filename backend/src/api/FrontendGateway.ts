@@ -13,20 +13,8 @@ export class FrontendGateway {
   constructor(private eventBus: EventBus, port: number = 8081) {
     this.wss = new WebSocketServer({ port });
 
-    // Rate limiting for connections
-    let lastConnectionTime = 0;
-    const minConnectionInterval = 2000; // 2 seconds between connections
-
     // Handle new WebSocket connections
     this.wss.on('connection', (ws: WebSocket) => {
-      const now = Date.now();
-      if (now - lastConnectionTime < minConnectionInterval) {
-        console.log('⚠️  Connection attempt too fast, rejecting');
-        ws.close();
-        return;
-      }
-      lastConnectionTime = now;
-
       console.log('🔌 Frontend client connected');
       this.clients.add(ws);
 

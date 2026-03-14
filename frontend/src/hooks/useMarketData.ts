@@ -99,6 +99,9 @@ export function useMarketData() {
         
         try {
           const message = JSON.parse(event.data);
+          
+          // Debug: log all received messages
+          console.log('📨 WebSocket message received:', message.type, message.payload);
 
           switch (message.type) {
             case 'connected':
