@@ -10,6 +10,7 @@ import { PaperTradingEngine } from './execution/PaperTradingEngine';
 import { ITradeRepository, Trade } from './infrastructure/db/ITradeRepository';
 import { SignalGenerated, MarketTick } from '../../shared/src/events';
 import { BinanceWsClient } from './infrastructure/BinanceWsClient';
+import { BinanceRestClient } from './infrastructure/BinanceRestClient';
 
 // Simple in-memory trade repository for demo
 class InMemoryTradeRepository implements ITradeRepository {
@@ -76,25 +77,58 @@ eventBus.subscribe<Trade>('trade_executed', (trade) => {
 console.log('✅ Frontend Gateway listening on ws://localhost:8081');
 console.log('✅ All systems connected and running\n');
 
-// Use Binance WebSocket (public, no auth required) for real market data
-console.log('🔌 Connecting to Binance WebSocket for real-time data...');
-const binanceClient = new BinanceWsClient(eventBus, 'btcusdt');
-binanceClient.connect();
-console.log('✅ Connected to Binance WebSocket API\n');
+// Binance WebSocket client (defined here for access in shutdown handler)
+let binanceClient: BinanceWsClient | null = null;
 
-console.log('🎯 The bot is now running!');
-console.log('   - Mode: LIVE Binance Data');
-console.log('   - Trading: Paper Trading Only (simulated)');
-console.log('   - Open http://localhost:5173 to see the dashboard');
-console.log('   - Watch for pattern detection signals in this terminal\n');
+// Fetch historical candles before connecting WebSocket
+async function bootstrap(): Promise<void> {
+  console.log('📚 Loading historical candles for indicator pre-calculation...');
+  
+  const restClient = new BinanceRestClient({
+    symbol: 'BTCUSDT',
+    interval: '1m',
+    limit: 200,
+  });
+
+  try {
+    const historicalCandles = await restClient.fetchWithProgress(
+      (current, total) => {
+        process.stdout.write(`\r   Loading ${total} historical candles... ${current}/${total}`);
+      }
+    );
+
+    console.log('\n✅ Historical candles loaded\n');
+
+    // Publish all historical candles to pre-populate IndicatorEngine
+    console.log('📤 Publishing historical candles to indicator engine...');
+    for (const candle of historicalCandles) {
+      eventBus.publish('candle_closed', candle);
+    }
+    console.log(`✅ Published ${historicalCandles.length} historical candles\n`);
+  } catch (error) {
+    console.error('❌ Failed to load historical candles:', error);
+    console.log('⚠️  Continuing without historical data (indicators will need warm-up)\n');
+  }
+
+  // Connect WebSocket for real-time updates (regardless of whether historical fetch succeeded)
+  console.log('🔌 Connecting to Binance WebSocket for real-time data...');
+  binanceClient = new BinanceWsClient(eventBus, 'btcusdt');
+  binanceClient.connect();
+  console.log('✅ Connected to Binance WebSocket API\n');
+}
+
+// Start the bootstrap process
+bootstrap();
 
 // Graceful shutdown
 process.on('SIGINT', () => {
   console.log('\n\n🛑 Shutting down gracefully...');
   indicatorEngine.unsubscribe();
   frontendGateway.close();
-  binanceClient.close();
-  console.log('✅ Binance WebSocket connection closed');
+  if (binanceClient) {
+    binanceClient.close();
+    console.log('✅ Binance WebSocket connection closed');
+  }
   console.log('✅ All components stopped');
   process.exit(0);
 });
