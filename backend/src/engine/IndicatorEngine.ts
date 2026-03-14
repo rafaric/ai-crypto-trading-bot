@@ -69,6 +69,10 @@ export class IndicatorEngine {
   private rsi: RSI;
   private macd: MACD;
   private atr: ATR;
+  
+  // Signal deduplication - track recently emitted signals to prevent spam
+  private recentSignals: Map<string, number> = new Map();
+  private readonly SIGNAL_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
 
   constructor(eventBus: EventBus) {
     this.eventBus = eventBus;
@@ -130,9 +134,10 @@ export class IndicatorEngine {
       timestamp: Date.now(),
     });
 
-    // Check for signals and emit if found
+    // Check for signals and emit if found (with deduplication)
     const signal = this.checkForSignals(indicators);
-    if (signal) {
+    if (signal && this.shouldEmitSignal(candle.symbol, signal.pattern)) {
+      console.log(`🚨 Signal detected: ${signal.pattern} (${signal.signal}) for ${candle.symbol}`);
       this.eventBus.publish<SignalGenerated>('SignalGenerated', {
         symbol: candle.symbol,
         action: signal.signal === 'bullish' ? 'BUY' : 'SELL',
@@ -234,6 +239,24 @@ export class IndicatorEngine {
         patterns,
       },
     };
+  }
+
+  /**
+   * Check if we should emit a signal for this symbol+pattern combination
+   * Prevents spam by enforcing a cooldown period between identical signals
+   */
+  private shouldEmitSignal(symbol: string, pattern: string): boolean {
+    const key = `${symbol}-${pattern}`;
+    const lastEmitted = this.recentSignals.get(key);
+    const now = Date.now();
+    
+    if (lastEmitted && now - lastEmitted < this.SIGNAL_COOLDOWN_MS) {
+      console.log(`⏳ Signal cooldown active for ${key} (${Math.round((this.SIGNAL_COOLDOWN_MS - (now - lastEmitted)) / 1000)}s remaining)`);
+      return false;
+    }
+    
+    this.recentSignals.set(key, now);
+    return true;
   }
 
   /**

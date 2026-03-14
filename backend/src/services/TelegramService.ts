@@ -4,10 +4,34 @@ export class TelegramService {
   private botToken: string | undefined;
   private chatId: string | undefined;
   private readonly baseUrl = 'https://api.telegram.org/bot';
+  
+  // Deduplication to prevent duplicate messages
+  private recentMessages: Map<string, number> = new Map();
+  private readonly dedupWindowMs = 5000; // 5 seconds
 
   constructor() {
     this.botToken = process.env.TELEGRAM_BOT_TOKEN;
     this.chatId = process.env.TELEGRAM_CHAT_ID;
+  }
+  
+  private isDuplicate(text: string): boolean {
+    const now = Date.now();
+    const lastSent = this.recentMessages.get(text);
+    
+    if (lastSent && (now - lastSent) < this.dedupWindowMs) {
+      return true;
+    }
+    
+    this.recentMessages.set(text, now);
+    
+    // Cleanup old entries
+    for (const [msg, timestamp] of this.recentMessages.entries()) {
+      if (now - timestamp > this.dedupWindowMs) {
+        this.recentMessages.delete(msg);
+      }
+    }
+    
+    return false;
   }
 
   private isConfigured(): boolean {
@@ -16,6 +40,12 @@ export class TelegramService {
 
   async sendMessage(text: string): Promise<void> {
     if (!this.isConfigured()) {
+      return;
+    }
+
+    // Deduplication check - prevent duplicate messages within 5 seconds
+    if (this.isDuplicate(text)) {
+      console.log('⚠️  Duplicate Telegram message prevented:', text.substring(0, 50) + '...');
       return;
     }
 

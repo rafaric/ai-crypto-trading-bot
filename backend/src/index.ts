@@ -46,9 +46,16 @@ console.log('✅ PaperTradingEngine initialized - ready to simulate trades\n');
 // Initialize Telegram Service for notifications
 const telegramService = new TelegramService();
 const telegramConfigured = process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID;
+
+// Flag to ensure welcome message is sent only once (even on reconnections)
+let telegramWelcomeSent = false;
+
 if (telegramConfigured) {
   console.log('📱 Telegram notifications enabled');
-  telegramService.sendMessage('🤖 <b>AI Crypto Trading Bot</b> iniciado\n\n✅ Conectado a Binance\n✅ Paper Trading activo\n✅ Listo para detectar señales');
+  if (!telegramWelcomeSent) {
+    telegramWelcomeSent = true;
+    telegramService.sendMessage('🤖 <b>AI Crypto Trading Bot</b> iniciado\n\n✅ Conectado a Binance\n✅ Paper Trading activo\n✅ Listo para detectar señales');
+  }
 } else {
   console.log('⚠️  Telegram not configured - set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env');
 }
