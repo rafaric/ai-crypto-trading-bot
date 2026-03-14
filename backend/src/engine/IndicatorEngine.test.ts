@@ -168,7 +168,7 @@ describe('IndicatorEngine', () => {
   });
 
   describe('Signal Detection', () => {
-    it('should emit signal_detected when bullish pattern is detected', () => {
+    it('should emit SignalGenerated when bullish pattern is detected', () => {
       // Re-mock CandlestickPatterns to return a bullish signal
       const { CandlestickPatterns } = require('../indicators/CandlestickPatterns');
       CandlestickPatterns.scan.mockReturnValueOnce([
@@ -203,18 +203,18 @@ describe('IndicatorEngine', () => {
       eventBus.publish('candle_closed', candle);
 
       expect(publishSpy).toHaveBeenCalledWith(
-        'signal_detected',
+        'SignalGenerated',
         expect.objectContaining({
           symbol: 'BTC/USDT',
-          signal: 'bullish',
-          pattern: 'Bullish Engulfing',
+          action: 'BUY',
+          strategy: 'Bullish Engulfing',
           confidence: 0.85,
           timestamp: expect.any(Number),
         })
       );
     });
 
-    it('should emit signal_detected when bearish pattern is detected', () => {
+    it('should emit SignalGenerated when bearish pattern is detected', () => {
       // Re-mock CandlestickPatterns to return a bearish signal
       const { CandlestickPatterns } = require('../indicators/CandlestickPatterns');
       CandlestickPatterns.scan.mockReturnValueOnce([
@@ -249,11 +249,11 @@ describe('IndicatorEngine', () => {
       eventBus.publish('candle_closed', candle);
 
       expect(publishSpy).toHaveBeenCalledWith(
-        'signal_detected',
+        'SignalGenerated',
         expect.objectContaining({
           symbol: 'BTC/USDT',
-          signal: 'bearish',
-          pattern: 'Bearish Engulfing',
+          action: 'SELL',
+          strategy: 'Bearish Engulfing',
           confidence: 0.75,
           timestamp: expect.any(Number),
         })

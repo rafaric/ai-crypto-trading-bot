@@ -9,5 +9,6 @@ export interface SignalGenerated {
   symbol: string;
   action: 'BUY' | 'SELL' | 'HOLD';
   confidence: number;
+  strategy?: string;
   timestamp: number;
 }

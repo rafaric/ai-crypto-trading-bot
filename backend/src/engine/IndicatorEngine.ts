@@ -1,5 +1,5 @@
 import { EventBus } from '../core/EventBus';
-import { MarketTick } from '../../../shared/src/events';
+import { MarketTick, SignalGenerated } from '../../../shared/src/events';
 import { EMA } from '../indicators/EMA';
 import { VWAP } from '../indicators/VWAP';
 import { RSI } from '../indicators/RSI';
@@ -129,9 +129,11 @@ export class IndicatorEngine {
     // Check for signals and emit if found
     const signal = this.checkForSignals(indicators);
     if (signal) {
-      this.eventBus.publish<SignalDetectedEvent>('signal_detected', {
+      this.eventBus.publish<SignalGenerated>('SignalGenerated', {
         symbol: candle.symbol,
-        ...signal,
+        action: signal.signal === 'bullish' ? 'BUY' : 'SELL',
+        confidence: signal.confidence,
+        strategy: signal.pattern,
         timestamp: Date.now(),
       });
     }

@@ -1,28 +1,115 @@
 import { EventBus } from './core/EventBus';
 import { FrontendGateway } from './api/FrontendGateway';
+import { IndicatorEngine } from './engine/IndicatorEngine';
+import { PaperTradingEngine } from './execution/PaperTradingEngine';
+import { ITradeRepository, Trade } from './infrastructure/db/ITradeRepository';
+import { SignalGenerated, MarketTick } from '../../shared/src/events';
 
-console.log('Starting backend server...');
+// Simple in-memory trade repository for demo
+class InMemoryTradeRepository implements ITradeRepository {
+  private trades: Trade[] = [];
 
+  async saveTrade(trade: Trade): Promise<void> {
+    this.trades.push(trade);
+    eventBus.publish('trade_executed', trade);
+  }
+
+  getTrades(): Trade[] {
+    return [...this.trades];
+  }
+}
+
+console.log('🚀 Starting AI Crypto Trading Bot...\n');
+
+// Initialize core components
 const eventBus = new EventBus();
 const frontendGateway = new FrontendGateway(eventBus, 8081);
 
-console.log('Backend server running. Frontend Gateway listening on ws://localhost:8081');
+// Initialize IndicatorEngine (the brain)
+const indicatorEngine = new IndicatorEngine(eventBus);
+console.log('✅ IndicatorEngine initialized - calculating EMA, VWAP, RSI, MACD, ATR, Patterns');
 
-// Mock data generation for demo purposes
+// Initialize PaperTradingEngine (simulated execution)
+const tradeRepository = new InMemoryTradeRepository();
+const paperTradingEngine = new PaperTradingEngine(tradeRepository);
+paperTradingEngine.startListening(eventBus);
+console.log('✅ PaperTradingEngine initialized - ready to simulate trades\n');
+
+// Subscribe to events to log activity
+let candleCount = 0;
+let signalCount = 0;
+
+eventBus.subscribe<MarketTick>('candle_closed', (candle) => {
+  candleCount++;
+  process.stdout.write(`\r📊 Candles processed: ${candleCount} | Signals detected: ${signalCount}`);
+});
+
+eventBus.subscribe('indicators_updated', () => {
+  // Indicators calculated - this happens automatically
+});
+
+eventBus.subscribe<SignalGenerated>('SignalGenerated', (signal) => {
+  signalCount++;
+  const emoji = signal.action === 'BUY' ? '🟢' : '🔴';
+  console.log(`\n${emoji} SIGNAL DETECTED!`);
+  console.log(`   Symbol: ${signal.symbol}`);
+  console.log(`   Action: ${signal.action}`);
+  console.log(`   Strategy: ${signal.strategy || 'Unknown'}`);
+  console.log(`   Confidence: ${(signal.confidence * 100).toFixed(1)}%`);
+  console.log(`   Time: ${new Date(signal.timestamp).toLocaleTimeString()}`);
+});
+
+eventBus.subscribe<Trade>('trade_executed', (trade) => {
+  console.log(`\n💰 PAPER TRADE EXECUTED!`);
+  console.log(`   Symbol: ${trade.symbol}`);
+  console.log(`   Side: ${trade.action}`);
+  console.log(`   Entry: $${trade.price.toFixed(2)}`);
+  console.log(`   Simulated: ${trade.simulated}`);
+});
+
+console.log('✅ Frontend Gateway listening on ws://localhost:8081');
+console.log('✅ All systems connected and running\n');
+
+// Generate realistic mock candle data
+let basePrice = 65000;
+let trend = 1; // 1 for up, -1 for down
+
+console.log('📈 Starting mock data generation...');
+console.log('   (Generating realistic candles to test pattern detection)\n');
+
 setInterval(() => {
-  eventBus.publish('MarketTick', {
+  // Random walk with some trend persistence
+  const change = (Math.random() - 0.5) * 200;
+  
+  // Occasionally change trend
+  if (Math.random() < 0.1) {
+    trend *= -1;
+  }
+  
+  basePrice += change + (trend * 50);
+  
+  // Ensure price doesn't go negative or too low
+  basePrice = Math.max(1000, basePrice);
+  
+  const candle = {
     symbol: 'BTC/USDT',
-    price: 65000 + (Math.random() * 100 - 50),
+    price: basePrice,
     timestamp: Date.now(),
-    volume: Math.random() * 5
-  });
+    volume: 0.5 + Math.random() * 4.5
+  };
+  
+  eventBus.publish('candle_closed', candle);
 }, 2000);
 
-setInterval(() => {
-  eventBus.publish('SignalGenerated', {
-    symbol: 'BTC/USDT',
-    action: Math.random() > 0.5 ? 'BUY' : 'SELL',
-    confidence: Math.random(),
-    timestamp: Date.now()
-  });
-}, 5000);
+console.log('🎯 The bot is now running!');
+console.log('   - Open http://localhost:5173 to see the dashboard');
+console.log('   - Watch for pattern detection signals in this terminal\n');
+
+// Graceful shutdown
+process.on('SIGINT', () => {
+  console.log('\n\n🛑 Shutting down gracefully...');
+  indicatorEngine.unsubscribe();
+  frontendGateway.close();
+  console.log('✅ All components stopped');
+  process.exit(0);
+});
