@@ -1,3 +1,8 @@
+// Load environment variables from .env file
+import { config } from 'dotenv';
+import { resolve } from 'path';
+config({ path: resolve(__dirname, '../.env') });
+
 import { EventBus } from './core/EventBus';
 import { FrontendGateway } from './api/FrontendGateway';
 import { IndicatorEngine } from './engine/IndicatorEngine';

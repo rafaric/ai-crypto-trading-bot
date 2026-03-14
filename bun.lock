@@ -4,6 +4,9 @@
   "workspaces": {
     "": {
       "name": "superbot",
+      "dependencies": {
+        "dotenv": "^17.3.1",
+      },
       "devDependencies": {
         "@types/jest": "^30.0.0",
         "@types/node": "^25.5.0",
@@ -17,6 +20,7 @@
       "name": "backend",
       "version": "1.0.0",
       "dependencies": {
+        "dotenv": "^17.3.1",
         "ws": "^8.19.0",
       },
       "devDependencies": {
@@ -609,6 +613,8 @@
     "detect-newline": ["detect-newline@3.1.0", "", {}, "sha512-TLz+x/vEXm/Y7P7wn1EJFNLxYpUD4TgMosxY6fAVJUnJMbupHBOncxyWUG9OpTaH9EBD7uFI5LfEgmMOc54DsA=="],
 
     "dom-accessibility-api": ["dom-accessibility-api@0.5.16", "", {}, "sha512-X7BJ2yElsnOJ30pZF4uIIDfBEVgF4XEBxL9Bxhy6dnrm5hkzqmsWHGTiHqRiITNhMyFLyAiWndIJP7Z1NTteDg=="],
+
+    "dotenv": ["dotenv@17.3.1", "", {}, "sha512-IO8C/dzEb6O3F9/twg6ZLXz164a2fhTnEWb95H23Dm4OuN+92NmEAlTrupP9VW6Jm3sO26tQlqyvyi4CsnY9GA=="],
 
     "eastasianwidth": ["eastasianwidth@0.2.0", "", {}, "sha512-I88TYZWc9XiYHRQ4/3c5rjjfgkjhLyW2luGIheGERbNQ6OY7yTybanSpDXZa8y7VUP9YmDcYa+eyq4ca7iLqWA=="],
 
