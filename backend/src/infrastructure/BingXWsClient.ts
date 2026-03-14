@@ -84,6 +84,9 @@ export class BingXWsClient {
 
     try {
       const parsed = JSON.parse(payload);
+      
+      // Debug: log all received messages
+      console.log('📡 BingX message:', JSON.stringify(parsed).substring(0, 200));
 
       // Parse kline/candle data
       if (parsed.e === 'kline' && parsed.k) {
@@ -95,10 +98,14 @@ export class BingXWsClient {
           volume: parseFloat(kline.v),
         };
 
+        console.log('🕯️ Candle received:', candle.symbol, '$' + candle.price, 'Vol:', candle.volume);
         this.eventBus.publish('candle_closed', candle);
+      } else if (parsed.code !== undefined) {
+        // Log response to subscription
+        console.log('📋 BingX response:', parsed);
       }
     } catch (error) {
-      // Silently ignore malformed messages
+      console.error('❌ Failed to parse BingX message:', error);
     }
   }
 

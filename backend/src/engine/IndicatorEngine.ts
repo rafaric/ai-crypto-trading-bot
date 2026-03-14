@@ -108,6 +108,8 @@ export class IndicatorEngine {
    * Handle candle_closed event
    */
   private handleCandleClosed(candle: MarketTick): void {
+    console.log(`🕯️ Processing candle: ${candle.symbol} @ $${candle.price.toFixed(2)}`);
+    
     // Add candle to cache
     this.candlesCache.push(candle);
     
@@ -115,6 +117,8 @@ export class IndicatorEngine {
     if (this.candlesCache.length > MAX_CANDLES_CACHE) {
       this.candlesCache.shift();
     }
+
+    console.log(`📊 Cache size: ${this.candlesCache.length} candles`);
 
     // Calculate all indicators
     const indicators = this.calculateAllIndicators();

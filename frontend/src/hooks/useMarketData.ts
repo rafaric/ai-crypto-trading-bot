@@ -99,13 +99,10 @@ export function useMarketData() {
         
         try {
           const message = JSON.parse(event.data);
-          
-          // Debug: log all received messages
-          console.log('📨 WebSocket message received:', message.type, message.payload);
 
           switch (message.type) {
             case 'connected':
-              console.log('🤖', message.payload.message);
+              // Welcome message received
               break;
 
             case 'candle_closed':
@@ -123,12 +120,8 @@ export function useMarketData() {
               break;
 
             case 'SignalGenerated':
-              console.log('🚨 Signal received:', message.payload);
               setSignals((prev) => [...prev, message.payload]);
               break;
-
-            default:
-              console.log('📨 Unknown message type:', message.type);
           }
         } catch (e) {
           console.error('Failed to parse websocket message:', e);

@@ -77,16 +77,16 @@ export class FrontendGateway {
   private broadcast(type: string, payload: any) {
     const message = JSON.stringify({ type, payload });
     let sentCount = 0;
-    
+
     for (const client of this.clients) {
       if (client.readyState === WebSocket.OPEN) {
         client.send(message);
         sentCount++;
       }
     }
-    
-    // Log only occasionally to avoid spam
-    if (Math.random() < 0.01) {
+
+    // Always log candle and signal broadcasts for debugging
+    if (type === 'candle_closed' || type === 'SignalGenerated') {
       console.log(`📡 Broadcast ${type} to ${sentCount} clients`);
     }
   }
