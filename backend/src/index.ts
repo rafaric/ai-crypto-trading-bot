@@ -87,12 +87,30 @@ eventBus.subscribe<SignalGenerated>('SignalGenerated', async (signal) => {
   await telegramService.sendSignalAlert(signal);
 });
 
+// Track recent trades to prevent spam
+const recentTrades: Map<string, number> = new Map();
+const TRADE_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
+
 eventBus.subscribe<Trade>('trade_executed', async (trade) => {
   console.log(`\n💰 PAPER TRADE EXECUTED!`);
   console.log(`   Symbol: ${trade.symbol}`);
   console.log(`   Side: ${trade.action}`);
   console.log(`   Entry: $${trade.price.toFixed(2)}`);
   console.log(`   Simulated: ${trade.simulated}`);
+  
+  // Check cooldown to prevent Telegram spam
+  const tradeKey = `${trade.symbol}-${trade.action}`;
+  const lastTradeTime = recentTrades.get(tradeKey);
+  const now = Date.now();
+  
+  if (lastTradeTime && now - lastTradeTime < TRADE_COOLDOWN_MS) {
+    const remainingSeconds = Math.ceil((TRADE_COOLDOWN_MS - (now - lastTradeTime)) / 1000);
+    console.log(`⏱️  Trade notification skipped (cooldown): ${remainingSeconds}s remaining`);
+    return;
+  }
+  
+  // Update last trade time
+  recentTrades.set(tradeKey, now);
   
   // Send Telegram notification
   await telegramService.sendTradeNotification({
