@@ -1,34 +1,169 @@
-import React from 'react';
-import type { MarketTick } from 'shared/src/events';
+import { useEffect, useRef } from 'react';
+import { createChart, CandlestickSeries, LineSeries, HistogramSeries } from 'lightweight-charts';
+import type { Candle } from '../../../shared/src/events';
 
 interface ChartPanelProps {
-  ticks: MarketTick[];
+  candles: Candle[];
+  indicators?: {
+    ema?: number | null;
+    vwap?: number | null;
+  };
 }
 
-export const ChartPanel: React.FC<ChartPanelProps> = ({ ticks }) => {
-  if (ticks.length === 0) {
-    return <div>No data available</div>;
-  }
+export function ChartPanel({ candles, indicators }: ChartPanelProps) {
+  const chartContainerRef = useRef<HTMLDivElement>(null);
 
-  const latestTick = ticks[ticks.length - 1];
+  useEffect(() => {
+    if (!chartContainerRef.current || candles.length === 0) return;
+
+    // Create chart
+    const chart = createChart(chartContainerRef.current, {
+      layout: {
+        background: { color: '#ffffff' },
+        textColor: '#333',
+      },
+      grid: {
+        vertLines: { color: '#f0f0f0' },
+        horzLines: { color: '#f0f0f0' },
+      },
+      crosshair: {
+        mode: 1,
+      },
+      rightPriceScale: {
+        borderColor: '#ccc',
+      },
+      timeScale: {
+        borderColor: '#ccc',
+        timeVisible: true,
+        secondsVisible: false,
+      },
+      height: 400,
+    });
+
+    // Create candlestick series
+    const candlestickSeries = chart.addSeries(CandlestickSeries, {
+      upColor: '#26a69a',
+      downColor: '#ef5350',
+      borderVisible: false,
+      wickUpColor: '#26a69a',
+      wickDownColor: '#ef5350',
+    });
+
+    // Transform candles to chart format
+    const chartData = candles.map((candle) => ({
+      time: candle.timestamp / 1000,
+      open: candle.open,
+      high: candle.high,
+      low: candle.low,
+      close: candle.close,
+    }));
+
+    candlestickSeries.setData(chartData);
+
+    // Add EMA line if available
+    if (indicators?.ema) {
+      const emaSeries = chart.addSeries(LineSeries, {
+        color: '#2196f3',
+        lineWidth: 2,
+        title: 'EMA 200',
+      });
+      
+      const emaData = candles.map((candle) => ({
+        time: candle.timestamp / 1000,
+        value: indicators.ema!,
+      }));
+      
+      emaSeries.setData(emaData);
+    }
+
+    // Add VWAP line if available
+    if (indicators?.vwap) {
+      const vwapSeries = chart.addSeries(LineSeries, {
+        color: '#9c27b0',
+        lineWidth: 2,
+        title: 'VWAP',
+      });
+      
+      const vwapData = candles.map((candle) => ({
+        time: candle.timestamp / 1000,
+        value: indicators.vwap!,
+      }));
+      
+      vwapSeries.setData(vwapData);
+    }
+
+    // Add volume
+    const volumeSeries = chart.addSeries(HistogramSeries, {
+      color: '#26a69a',
+      priceFormat: {
+        type: 'volume',
+      },
+      priceScaleId: '',
+    });
+    
+    volumeSeries.priceScale().applyOptions({
+      scaleMargins: {
+        top: 0.8,
+        bottom: 0,
+      },
+    });
+
+    const volumeData = candles.map((candle, index) => {
+      const prevClose = index > 0 ? candles[index - 1].close : candle.open;
+      const isUp = candle.close >= prevClose;
+      return {
+        time: candle.timestamp / 1000,
+        value: candle.volume,
+        color: isUp ? '#26a69a' : '#ef5350',
+      };
+    });
+    
+    volumeSeries.setData(volumeData);
+
+    // Fit content
+    chart.timeScale().fitContent();
+
+    // Handle resize
+    const handleResize = () => {
+      if (chartContainerRef.current) {
+        chart.applyOptions({
+          width: chartContainerRef.current.clientWidth,
+        });
+      }
+    };
+    window.addEventListener('resize', handleResize);
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      chart.remove();
+    };
+  }, [candles, indicators]);
 
   return (
-    <div className="flex flex-col p-4 border rounded-lg bg-white shadow-sm h-64">
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-lg font-semibold">{latestTick.symbol} Chart</h2>
-        <div className="text-xl font-bold">
-          ${latestTick.price.toFixed(2)}
+    <div className="bg-white rounded-lg shadow p-4">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-lg font-semibold">BTC/USDT Chart</h2>
+        <div className="flex gap-4 text-sm">
+          {indicators?.ema && (
+            <span className="flex items-center gap-1">
+              <span className="w-3 h-0.5 bg-blue-500"></span>
+              EMA 200: {indicators.ema.toFixed(2)}
+            </span>
+          )}
+          {indicators?.vwap && (
+            <span className="flex items-center gap-1">
+              <span className="w-3 h-0.5 bg-purple-500"></span>
+              VWAP: {indicators.vwap.toFixed(2)}
+            </span>
+          )}
         </div>
       </div>
-      <div 
-        data-testid="chart-container" 
-        className="flex-1 bg-gray-50 border border-gray-200 rounded relative"
-      >
-        {/* Placeholder for lightweight-charts */}
-        <div className="absolute inset-0 flex items-center justify-center text-gray-400">
-          Chart View (Lightweight Charts container)
+      <div ref={chartContainerRef} className="w-full" />
+      {candles.length === 0 && (
+        <div className="flex items-center justify-center h-64 text-gray-500">
+          Waiting for candle data...
         </div>
-      </div>
+      )}
     </div>
   );
-};
+}
