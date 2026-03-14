@@ -1,5 +1,6 @@
 import { BingXWsClient } from './BingXWsClient';
 import { EventBus } from '../core/EventBus';
+import { Candle } from '../domain/MarketTick';
 
 describe('BingXWsClient', () => {
   let eventBus: EventBus;
@@ -39,27 +40,32 @@ describe('BingXWsClient', () => {
     }).toThrow('BINGX_API_KEY and BINGX_API_SECRET must be set');
   });
 
-  it('should parse BingX candle format to MarketTick', (done) => {
+  it('should parse BingX candle format to Candle with OHLC', (done) => {
     client = new BingXWsClient(eventBus, 'BTC-USDT');
-    
+
     // Subscribe to candle_closed event
-    eventBus.subscribe('candle_closed', (tick) => {
-      expect(tick.symbol).toBe('BTC-USDT');
-      expect(tick.price).toBe(65000);
-      expect(tick.volume).toBe(1.5);
-      expect(tick.timestamp).toBe(1234567890);
+    eventBus.subscribe<Candle>('candle_closed', (candle) => {
+      expect(candle.symbol).toBe('BTC-USDT');
+      expect(candle.close).toBe(65000);
+      expect(candle.volume).toBe(1.5);
+      expect(candle.timestamp).toBe(1234567890);
       done();
     });
 
     // Simulate the client publishing a candle
-    const candle = {
+    const testCandle = {
       symbol: 'BTC-USDT',
-      price: 65000,
+      open: 64000,
+      high: 66000,
+      low: 63000,
+      close: 65000,
       timestamp: 1234567890,
       volume: 1.5,
+      isClosed: true,
+      interval: '1m',
     };
-    
-    eventBus.publish('candle_closed', candle);
+
+    eventBus.publish('candle_closed', testCandle);
   });
 
   it('should close without errors', () => {

@@ -1,6 +1,14 @@
-export interface MarketTick {
+export interface Candle {
   symbol: string;
-  price: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
   timestamp: number;
   volume?: number;
+  isClosed?: boolean;
+  interval?: string;
 }
+
+// Deprecated: Use Candle instead
+export type MarketTick = Candle;

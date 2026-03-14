@@ -2,12 +2,9 @@ import WebSocket from 'ws';
 import crypto from 'crypto';
 import { EventBus } from '../core/EventBus';
 
-export interface CandleData {
-  symbol: string;
-  price: number;
-  timestamp: number;
-  volume: number;
-}
+import { Candle } from '../domain/MarketTick';
+
+export interface CandleData extends Candle {}
 
 export class BingXWsClient {
   private ws: WebSocket | null = null;
@@ -93,12 +90,17 @@ export class BingXWsClient {
         const kline = parsed.k;
         const candle: CandleData = {
           symbol: parsed.s || this.symbol,
-          price: parseFloat(kline.c),
+          open: parseFloat(kline.o),
+          high: parseFloat(kline.h),
+          low: parseFloat(kline.l),
+          close: parseFloat(kline.c),
           timestamp: kline.t,
           volume: parseFloat(kline.v),
+          isClosed: true,
+          interval: '1m'
         };
 
-        console.log('🕯️ Candle received:', candle.symbol, '$' + candle.price, 'Vol:', candle.volume);
+        console.log('🕯️ Candle received:', candle.symbol, '$' + candle.close, 'Vol:', candle.volume);
         this.eventBus.publish('candle_closed', candle);
       } else if (parsed.code !== undefined) {
         // Log response to subscription

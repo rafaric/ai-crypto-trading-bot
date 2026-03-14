@@ -8,7 +8,7 @@ import { FrontendGateway } from './api/FrontendGateway';
 import { IndicatorEngine } from './engine/IndicatorEngine';
 import { PaperTradingEngine } from './execution/PaperTradingEngine';
 import { ITradeRepository, Trade } from './infrastructure/db/ITradeRepository';
-import { SignalGenerated, MarketTick } from '../../shared/src/events';
+import { SignalGenerated, Candle } from '../../shared/src/events';
 import { BinanceWsClient } from './infrastructure/BinanceWsClient';
 import { BinanceRestClient } from './infrastructure/BinanceRestClient';
 import { TelegramService } from './services/TelegramService';
@@ -57,7 +57,7 @@ if (telegramConfigured) {
 let candleCount = 0;
 let signalCount = 0;
 
-eventBus.subscribe<MarketTick>('candle_closed', (candle) => {
+eventBus.subscribe<Candle>('candle_closed', (candle) => {
   candleCount++;
   process.stdout.write(`\r📊 Candles processed: ${candleCount} | Signals detected: ${signalCount}`);
 });

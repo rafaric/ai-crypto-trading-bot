@@ -1,4 +1,4 @@
-import { Candle } from './CandlestickPatterns';
+import { Candle } from '../../../shared/src/events';
 
 /**
  * Calculates Average True Range (ATR)

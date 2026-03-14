@@ -1,7 +1,7 @@
 import { FrontendGateway } from './FrontendGateway';
 import { EventBus } from '../core/EventBus';
 import { WebSocketServer, WebSocket } from 'ws';
-import { MarketTick, SignalGenerated } from '../../../shared/src/events';
+import { Candle, SignalGenerated } from '../../../shared/src/events';
 import { IndicatorsUpdatedEvent } from '../engine/IndicatorEngine';
 
 describe('FrontendGateway', () => {
@@ -28,9 +28,12 @@ describe('FrontendGateway', () => {
   it('should broadcast candle_closed events', (done) => {
     gateway = new FrontendGateway(eventBus, 8082);
     
-    const candle: MarketTick = {
+    const candle: Candle = {
       symbol: 'BTC/USDT',
-      price: 50000,
+      open: 50000,
+      high: 50000,
+      low: 50000,
+      close: 50000,
       timestamp: Date.now(),
       volume: 1.5,
     };

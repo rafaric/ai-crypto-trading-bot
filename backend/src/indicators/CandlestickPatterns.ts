@@ -1,44 +1,10 @@
-import { MarketTick } from '../../../shared/src/events';
-
-export interface Candle {
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  timestamp: number;
-  volume: number;
-}
+import { Candle } from '../../../shared/src/events';
 
 /**
  * Detects candlestick patterns for trading signals
  * All patterns return confidence score (0.0 to 1.0) based on pattern quality
  */
 export class CandlestickPatterns {
-  
-  /**
-   * Converts MarketTick array to Candle array
-   * For OHLC data, we need to reconstruct from consecutive ticks
-   * In real implementation, this would use actual OHLC from exchange
-   */
-  static ticksToCandles(ticks: MarketTick[]): Candle[] {
-    const candles: Candle[] = [];
-    
-    for (let i = 1; i < ticks.length; i++) {
-      const prev = ticks[i - 1];
-      const curr = ticks[i];
-      
-      candles.push({
-        open: prev.price,
-        high: Math.max(prev.price, curr.price),
-        low: Math.min(prev.price, curr.price),
-        close: curr.price,
-        timestamp: curr.timestamp,
-        volume: curr.volume
-      });
-    }
-    
-    return candles;
-  }
 
   /**
    * Bullish Engulfing Pattern

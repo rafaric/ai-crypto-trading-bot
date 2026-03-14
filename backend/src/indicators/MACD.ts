@@ -1,4 +1,4 @@
-import { MarketTick } from '../../../shared/src/events';
+import { Candle } from '../../../shared/src/events';
 import { EMA } from './EMA';
 
 export interface MACDResult {
@@ -51,27 +51,27 @@ export class MACD {
   }
 
   /**
-   * Initialize MACD with historical ticks
-   * Need at least slowPeriod + signalPeriod ticks
+   * Initialize MACD with historical candles
+   * Need at least slowPeriod + signalPeriod candles
    */
-  initialize(ticks: MarketTick[]): void {
+  initialize(candles: Candle[]): void {
     const minRequired = this.slowPeriod + this.signalPeriod;
-    if (ticks.length < minRequired) {
-      throw new Error(`Need at least ${minRequired} ticks to initialize MACD. Got ${ticks.length}`);
+    if (candles.length < minRequired) {
+      throw new Error(`Need at least ${minRequired} candles to initialize MACD. Got ${candles.length}`);
     }
 
-    const closes = ticks.map(t => t.price);
+    const closes = candles.map(c => c.close);
     
     // Initialize both EMAs
     this.fastEMA.initialize(closes);
     this.slowEMA.initialize(closes);
     
-    // Calculate MACD line for all ticks
+    // Calculate MACD line for all candles
     this.macdHistory = [];
-    const fastValues = this.fastEMA.calculate(ticks);
-    const slowValues = this.slowEMA.calculate(ticks);
+    const fastValues = this.fastEMA.calculate(candles);
+    const slowValues = this.slowEMA.calculate(candles);
     
-    for (let i = 0; i < ticks.length; i++) {
+    for (let i = 0; i < candles.length; i++) {
       if (fastValues[i] !== null && slowValues[i] !== null) {
         this.macdHistory.push(fastValues[i]! - slowValues[i]!);
       }
@@ -91,14 +91,14 @@ export class MACD {
   }
 
   /**
-   * Update MACD with a new tick
+   * Update MACD with a new candle
    */
-  update(tick: MarketTick): MACDUpdateResult {
+  update(candle: Candle): MACDUpdateResult {
     if (!this.initialized) {
       throw new Error('MACD not initialized. Call initialize() first with historical data.');
     }
 
-    const price = tick.price;
+    const price = candle.close;
     
     // Update both EMAs
     const fastValue = this.fastEMA.update(price);
@@ -130,27 +130,27 @@ export class MACD {
   }
 
   /**
-   * Calculate MACD from an array of ticks
+   * Calculate MACD from an array of candles
    */
-  calculate(ticks: MarketTick[]): MACDResult {
+  calculate(candles: Candle[]): MACDResult {
     const minRequired = this.slowPeriod + this.signalPeriod;
-    
-    if (ticks.length < minRequired) {
+
+    if (candles.length < minRequired) {
       return {
-        macdLine: new Array(ticks.length).fill(null),
-        signalLine: new Array(ticks.length).fill(null),
-        histogram: new Array(ticks.length).fill(null),
+        macdLine: new Array(candles.length).fill(null),
+        signalLine: new Array(candles.length).fill(null),
+        histogram: new Array(candles.length).fill(null),
         crossovers: []
       };
     }
 
     // Calculate Fast and Slow EMAs
-    const fastValues = this.fastEMA.calculate(ticks);
-    const slowValues = this.slowEMA.calculate(ticks);
+    const fastValues = this.fastEMA.calculate(candles);
+    const slowValues = this.slowEMA.calculate(candles);
     
     // Calculate MACD line
     const macdLine: (number | null)[] = [];
-    for (let i = 0; i < ticks.length; i++) {
+    for (let i = 0; i < candles.length; i++) {
       if (fastValues[i] !== null && slowValues[i] !== null) {
         macdLine.push(fastValues[i]! - slowValues[i]!);
       } else {
@@ -159,7 +159,7 @@ export class MACD {
     }
 
     // Calculate Signal line (EMA of MACD)
-    const signalLine: (number | null)[] = new Array(ticks.length).fill(null);
+    const signalLine: (number | null)[] = new Array(candles.length).fill(null);
     const validMacdValues: number[] = [];
     const validIndices: number[] = [];
     
@@ -170,12 +170,15 @@ export class MACD {
       }
     }
 
-    if (validMacdValues.length >= this.signalPeriod) {
+      if (validMacdValues.length >= this.signalPeriod) {
       const signalEMA = new EMA(this.signalPeriod);
       const signalValues = signalEMA.calculate(
         validMacdValues.map((v, i) => ({
           symbol: 'TEMP',
-          price: v,
+          open: v,
+          high: v,
+          low: v,
+          close: v,
           timestamp: i,
           volume: 1
         }))
@@ -191,7 +194,7 @@ export class MACD {
 
     // Calculate histogram
     const histogram: (number | null)[] = [];
-    for (let i = 0; i < ticks.length; i++) {
+    for (let i = 0; i < candles.length; i++) {
       if (macdLine[i] !== null && signalLine[i] !== null) {
         histogram.push(macdLine[i]! - signalLine[i]!);
       } else {
@@ -207,13 +210,13 @@ export class MACD {
           crossovers.push({
             type: 'bullish',
             index: i,
-            timestamp: ticks[i].timestamp
+            timestamp: candles[i].timestamp
           });
         } else if (histogram[i - 1]! > 0 && histogram[i]! < 0) {
           crossovers.push({
             type: 'bearish',
             index: i,
-            timestamp: ticks[i].timestamp
+            timestamp: candles[i].timestamp
           });
         }
       }

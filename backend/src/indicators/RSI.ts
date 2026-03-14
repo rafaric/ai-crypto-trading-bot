@@ -1,4 +1,4 @@
-import { MarketTick } from '../../../shared/src/events';
+import { Candle } from '../../../shared/src/events';
 
 /**
  * Calculates Relative Strength Index (RSI)
@@ -70,15 +70,15 @@ export class RSI {
   }
 
   /**
-   * Calculate RSI from an array of ticks
+   * Calculate RSI from an array of candles
    * Returns array of RSI values (null for first N periods)
    */
-  calculate(ticks: MarketTick[]): (number | null)[] {
-    if (ticks.length < this.period + 1) {
-      return new Array(ticks.length).fill(null);
+  calculate(candles: Candle[]): (number | null)[] {
+    if (candles.length < this.period + 1) {
+      return new Array(candles.length).fill(null);
     }
 
-    const closes = ticks.map(t => t.price);
+    const closes = candles.map(c => c.close);
     const result: (number | null)[] = new Array(this.period).fill(null);
 
     // Initialize

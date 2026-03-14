@@ -1,11 +1,11 @@
 import { EventBus } from '../core/EventBus';
-import { MarketTick, SignalGenerated } from '../../../shared/src/events';
+import { Candle, SignalGenerated } from '../../../shared/src/events';
 import { EMA } from '../indicators/EMA';
 import { VWAP } from '../indicators/VWAP';
 import { RSI } from '../indicators/RSI';
 import { MACD, MACDResult } from '../indicators/MACD';
 import { ATR } from '../indicators/ATR';
-import { CandlestickPatterns, Candle } from '../indicators/CandlestickPatterns';
+import { CandlestickPatterns } from '../indicators/CandlestickPatterns';
 
 export interface IndicatorValues {
   ema: {
@@ -60,7 +60,7 @@ const MAX_CANDLES_CACHE = 300;
 
 export class IndicatorEngine {
   private eventBus: EventBus;
-  private candlesCache: MarketTick[] = [];
+  private candlesCache: Candle[] = [];
   private unsubscribeFn: (() => void) | null = null;
   
   // Indicators
@@ -81,7 +81,7 @@ export class IndicatorEngine {
     this.atr = new ATR(14);
     
     // Subscribe to candle_closed event
-    this.unsubscribeFn = this.eventBus.subscribe<MarketTick>(
+    this.unsubscribeFn = this.eventBus.subscribe<Candle>(
       'candle_closed',
       this.handleCandleClosed.bind(this)
     );
@@ -100,15 +100,15 @@ export class IndicatorEngine {
   /**
    * Get current candles cache
    */
-  public getCandlesCache(): MarketTick[] {
+  public getCandlesCache(): Candle[] {
     return [...this.candlesCache];
   }
 
   /**
    * Handle candle_closed event
    */
-  private handleCandleClosed(candle: MarketTick): void {
-    console.log(`🕯️ Processing candle: ${candle.symbol} @ $${candle.price.toFixed(2)}`);
+  private handleCandleClosed(candle: Candle): void {
+    console.log(`🕯️ Processing candle: ${candle.symbol} @ $${candle.close.toFixed(2)}`);
     
     // Add candle to cache
     this.candlesCache.push(candle);
@@ -147,28 +147,27 @@ export class IndicatorEngine {
    * Calculate all indicators from current cache
    */
   private calculateAllIndicators(): IndicatorValues {
-    const ticks = this.candlesCache;
-    const candles = CandlestickPatterns.ticksToCandles(ticks);
+    const candles = this.candlesCache;
 
     // Calculate EMA (needs at least 200 periods)
     let emaValue: number | null = null;
-    if (ticks.length >= this.ema.getPeriod()) {
-      const emaValues = this.ema.calculate(ticks);
+    if (candles.length >= this.ema.getPeriod()) {
+      const emaValues = this.ema.calculate(candles);
       emaValue = emaValues[emaValues.length - 1] ?? null;
     }
 
     // Calculate VWAP (works with any amount of data)
     let vwapValue: number | null = null;
-    if (ticks.length > 0) {
-      const vwapValues = this.vwap.calculateRolling(ticks);
+    if (candles.length > 0) {
+      const vwapValues = this.vwap.calculateRolling(candles);
       vwapValue = vwapValues[vwapValues.length - 1] ?? null;
     }
 
     // Calculate RSI (needs at least 15 periods)
     let rsiValue: number | null = null;
     let rsiSignal: 'overbought' | 'oversold' | 'neutral' | null = null;
-    if (ticks.length >= this.rsi.getPeriod() + 1) {
-      const rsiValues = this.rsi.calculate(ticks);
+    if (candles.length >= this.rsi.getPeriod() + 1) {
+      const rsiValues = this.rsi.calculate(candles);
       rsiValue = rsiValues[rsiValues.length - 1] ?? null;
       if (rsiValue !== null) {
         if (rsiValue > 70) rsiSignal = 'overbought';
@@ -184,8 +183,8 @@ export class IndicatorEngine {
       histogram: [],
       crossovers: [],
     };
-    if (ticks.length >= this.macd.getSlowPeriod() + this.macd.getSignalPeriod()) {
-      macdResult = this.macd.calculate(ticks);
+    if (candles.length >= this.macd.getSlowPeriod() + this.macd.getSignalPeriod()) {
+      macdResult = this.macd.calculate(candles);
     }
 
     // Calculate ATR (needs candles with OHLC data)

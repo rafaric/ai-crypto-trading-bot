@@ -1,28 +1,11 @@
-import { CandlestickPatterns, Candle } from './CandlestickPatterns';
-import { MarketTick } from '../../../shared/src/events';
+import { CandlestickPatterns } from './CandlestickPatterns';
+import { Candle } from '../../../shared/src/events';
 
 describe('CandlestickPatterns', () => {
-  describe('ticksToCandles', () => {
-    it('should convert ticks to candles', () => {
-      const ticks: MarketTick[] = [
-        { symbol: 'BTC', price: 100, timestamp: 1, volume: 1 },
-        { symbol: 'BTC', price: 110, timestamp: 2, volume: 1 },
-        { symbol: 'BTC', price: 105, timestamp: 3, volume: 1 },
-      ];
-
-      const candles = CandlestickPatterns.ticksToCandles(ticks);
-
-      expect(candles).toHaveLength(2);
-      expect(candles[0].open).toBe(100);
-      expect(candles[0].close).toBe(110);
-      expect(candles[0].high).toBe(110);
-      expect(candles[0].low).toBe(100);
-    });
-  });
-
   describe('isBullishEngulfing', () => {
     it('should detect bullish engulfing pattern', () => {
       const prev: Candle = {
+        symbol: 'BTC',
         open: 110,
         high: 115,
         low: 108,
@@ -32,6 +15,7 @@ describe('CandlestickPatterns', () => {
       };
 
       const curr: Candle = {
+        symbol: 'BTC',
         open: 104, // Below prev close
         high: 116,
         low: 103,
@@ -48,6 +32,7 @@ describe('CandlestickPatterns', () => {
 
     it('should not detect if previous is green', () => {
       const prev: Candle = {
+        symbol: 'BTC',
         open: 100,
         high: 115,
         low: 98,
@@ -57,6 +42,7 @@ describe('CandlestickPatterns', () => {
       };
 
       const curr: Candle = {
+        symbol: 'BTC',
         open: 104,
         high: 116,
         low: 103,
@@ -72,6 +58,7 @@ describe('CandlestickPatterns', () => {
 
     it('should not detect if current is red', () => {
       const prev: Candle = {
+        symbol: 'BTC',
         open: 110,
         high: 115,
         low: 108,
@@ -81,6 +68,7 @@ describe('CandlestickPatterns', () => {
       };
 
       const curr: Candle = {
+        symbol: 'BTC',
         open: 106,
         high: 107,
         low: 100,
@@ -96,6 +84,7 @@ describe('CandlestickPatterns', () => {
 
     it('should calculate higher confidence for stronger engulfing', () => {
       const prev: Candle = {
+        symbol: 'BTC',
         open: 110,
         high: 111,
         low: 109,
@@ -105,6 +94,7 @@ describe('CandlestickPatterns', () => {
       };
 
       const curr: Candle = {
+        symbol: 'BTC',
         open: 104,
         high: 120,
         low: 103,
@@ -123,6 +113,7 @@ describe('CandlestickPatterns', () => {
   describe('isBearishEngulfing', () => {
     it('should detect bearish engulfing pattern', () => {
       const prev: Candle = {
+        symbol: 'BTC',
         open: 100,
         high: 105,
         low: 98,
@@ -132,6 +123,7 @@ describe('CandlestickPatterns', () => {
       };
 
       const curr: Candle = {
+        symbol: 'BTC',
         open: 109, // Above prev close
         high: 112,
         low: 95,
@@ -148,6 +140,7 @@ describe('CandlestickPatterns', () => {
 
     it('should not detect if previous is red', () => {
       const prev: Candle = {
+        symbol: 'BTC',
         open: 110,
         high: 112,
         low: 100,
@@ -157,6 +150,7 @@ describe('CandlestickPatterns', () => {
       };
 
       const curr: Candle = {
+        symbol: 'BTC',
         open: 109,
         high: 112,
         low: 95,
@@ -174,6 +168,7 @@ describe('CandlestickPatterns', () => {
   describe('isPinBar', () => {
     it('should detect bullish pin bar (hammer)', () => {
       const candle: Candle = {
+        symbol: 'BTC',
         open: 100,
         high: 102,
         low: 90, // Long lower wick
@@ -191,6 +186,7 @@ describe('CandlestickPatterns', () => {
 
     it('should detect bearish pin bar (shooting star)', () => {
       const candle: Candle = {
+        symbol: 'BTC',
         open: 100,
         high: 115, // Long upper wick
         low: 98,
@@ -208,6 +204,7 @@ describe('CandlestickPatterns', () => {
 
     it('should not detect pin bar with large body', () => {
       const candle: Candle = {
+        symbol: 'BTC',
         open: 100,
         high: 110,
         low: 90,
@@ -223,6 +220,7 @@ describe('CandlestickPatterns', () => {
 
     it('should not detect pin bar without long wick', () => {
       const candle: Candle = {
+        symbol: 'BTC',
         open: 100,
         high: 102,
         low: 99, // Only 1 unit lower wick
@@ -238,6 +236,7 @@ describe('CandlestickPatterns', () => {
 
     it('should calculate higher confidence for longer wicks', () => {
       const candle: Candle = {
+        symbol: 'BTC',
         open: 100,
         high: 102,
         low: 80, // Very long lower wick (20 vs body of 1)
@@ -256,6 +255,7 @@ describe('CandlestickPatterns', () => {
   describe('isDoji', () => {
     it('should detect doji pattern', () => {
       const candle: Candle = {
+        symbol: 'BTC',
         open: 100,
         high: 105,
         low: 95,
@@ -272,6 +272,7 @@ describe('CandlestickPatterns', () => {
 
     it('should detect perfect doji', () => {
       const candle: Candle = {
+        symbol: 'BTC',
         open: 100,
         high: 105,
         low: 95,
@@ -288,6 +289,7 @@ describe('CandlestickPatterns', () => {
 
     it('should not detect doji with large body', () => {
       const candle: Candle = {
+        symbol: 'BTC',
         open: 100,
         high: 110,
         low: 90,
@@ -303,6 +305,7 @@ describe('CandlestickPatterns', () => {
 
     it('should respect custom threshold', () => {
       const candle: Candle = {
+        symbol: 'BTC',
         open: 100,
         high: 105,
         low: 95,
@@ -315,6 +318,7 @@ describe('CandlestickPatterns', () => {
       // Actually body/range = 2/10 = 0.2, which is > 0.1 threshold
       // Let's use a smaller body
       const dojiCandle: Candle = {
+        symbol: 'BTC',
         open: 100,
         high: 105,
         low: 95,
@@ -325,7 +329,7 @@ describe('CandlestickPatterns', () => {
 
       // With 10% threshold, should detect
       expect(CandlestickPatterns.isDoji(dojiCandle, 0.1).detected).toBe(true);
-      
+
       // With 1% threshold, should not detect
       expect(CandlestickPatterns.isDoji(dojiCandle, 0.01).detected).toBe(false);
     });
@@ -335,6 +339,7 @@ describe('CandlestickPatterns', () => {
     it('should scan multiple candles and find all patterns', () => {
       const candles: Candle[] = [
         {
+          symbol: 'BTC',
           open: 110,
           high: 112,
           low: 108,
@@ -343,6 +348,7 @@ describe('CandlestickPatterns', () => {
           volume: 1
         },
         {
+          symbol: 'BTC',
           open: 104,
           high: 116,
           low: 103,
@@ -351,6 +357,7 @@ describe('CandlestickPatterns', () => {
           volume: 1
         },
         {
+          symbol: 'BTC',
           open: 112,
           high: 114,
           low: 100,
@@ -359,6 +366,7 @@ describe('CandlestickPatterns', () => {
           volume: 1
         },
         {
+          symbol: 'BTC',
           open: 113,
           high: 118,
           low: 108,
@@ -387,6 +395,7 @@ describe('CandlestickPatterns', () => {
     it('should return empty array for no patterns', () => {
       const candles: Candle[] = [
         {
+          symbol: 'BTC',
           open: 100,
           high: 110,
           low: 95,
@@ -395,6 +404,7 @@ describe('CandlestickPatterns', () => {
           volume: 1
         },
         {
+          symbol: 'BTC',
           open: 109,
           high: 115,
           low: 105,

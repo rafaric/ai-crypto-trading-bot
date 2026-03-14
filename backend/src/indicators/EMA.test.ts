@@ -1,5 +1,5 @@
 import { EMA } from './EMA';
-import { MarketTick } from '../../../shared/src/events';
+import { Candle } from '../../../shared/src/events';
 
 describe('EMA', () => {
   describe('initialization', () => {
@@ -56,10 +56,10 @@ describe('EMA', () => {
   describe('calculate from ticks', () => {
     it('should return null array if insufficient ticks', () => {
       const ema = new EMA(5);
-      const ticks: MarketTick[] = [
-        { symbol: 'BTC', price: 100, timestamp: 1, volume: 1 },
-        { symbol: 'BTC', price: 110, timestamp: 2, volume: 1 },
-        { symbol: 'BTC', price: 120, timestamp: 3, volume: 1 },
+      const ticks: Candle[] = [
+        { symbol: 'BTC', open: 100, high: 100, low: 100, close: 100, timestamp: 1, volume: 1 },
+        { symbol: 'BTC', open: 110, high: 110, low: 110, close: 110, timestamp: 2, volume: 1 },
+        { symbol: 'BTC', open: 120, high: 120, low: 120, close: 120, timestamp: 3, volume: 1 },
       ];
       
       const result = ema.calculate(ticks);
@@ -69,12 +69,12 @@ describe('EMA', () => {
 
     it('should calculate EMA series correctly', () => {
       const ema = new EMA(3);
-      const ticks: MarketTick[] = [
-        { symbol: 'BTC', price: 10, timestamp: 1, volume: 1 },
-        { symbol: 'BTC', price: 20, timestamp: 2, volume: 1 },
-        { symbol: 'BTC', price: 30, timestamp: 3, volume: 1 }, // SMA = 20
-        { symbol: 'BTC', price: 40, timestamp: 4, volume: 1 }, // EMA = 30
-        { symbol: 'BTC', price: 50, timestamp: 5, volume: 1 }, // EMA = 40
+      const ticks: Candle[] = [
+        { symbol: 'BTC', open: 10, high: 10, low: 10, close: 10, timestamp: 1, volume: 1 },
+        { symbol: 'BTC', open: 20, high: 20, low: 20, close: 20, timestamp: 2, volume: 1 },
+        { symbol: 'BTC', open: 30, high: 30, low: 30, close: 30, timestamp: 3, volume: 1 }, // SMA = 20
+        { symbol: 'BTC', open: 40, high: 40, low: 40, close: 40, timestamp: 4, volume: 1 }, // EMA = 30
+        { symbol: 'BTC', open: 50, high: 50, low: 50, close: 50, timestamp: 5, volume: 1 }, // EMA = 40
       ];
       
       const result = ema.calculate(ticks);
@@ -88,13 +88,13 @@ describe('EMA', () => {
 
     it('should work with EMA 200 period', () => {
       const ema = new EMA(200);
-      const ticks: MarketTick[] = [];
+      const ticks: Candle[] = [];
       
       // Generate 250 ticks with price = index
       for (let i = 1; i <= 250; i++) {
         ticks.push({
           symbol: 'BTC',
-          price: i,
+          open: i, high: i, low: i, close: i,
           timestamp: i,
           volume: 1
         });

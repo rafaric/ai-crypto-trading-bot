@@ -1,4 +1,4 @@
-import { MarketTick } from '../domain/MarketTick';
+import { Candle } from '../domain/MarketTick';
 
 /**
  * Binance API response format for klines endpoint
@@ -44,9 +44,9 @@ export class BinanceRestClient {
 
   /**
    * Fetch historical candles from Binance REST API
-   * @returns Array of MarketTick objects (oldest first)
+   * @returns Array of Candle objects with OHLC data (oldest first)
    */
-  public async fetchHistoricalCandles(): Promise<MarketTick[]> {
+  public async fetchHistoricalCandles(): Promise<Candle[]> {
     const url = `${this.baseUrl}/api/v3/klines?symbol=${this.symbol}&interval=${this.interval}&limit=${this.limit}`;
 
     try {
@@ -63,15 +63,20 @@ export class BinanceRestClient {
         throw new Error('No candles returned from Binance API');
       }
 
-      // Transform Binance klines to MarketTick format
-      const ticks: MarketTick[] = klines.map((kline) => ({
+      // Transform Binance klines to Candle format with OHLC
+      const candles: Candle[] = klines.map((kline) => ({
         symbol: this.symbol,
-        price: parseFloat(kline[4]), // close price
+        open: parseFloat(kline[1]),
+        high: parseFloat(kline[2]),
+        low: parseFloat(kline[3]),
+        close: parseFloat(kline[4]),
         timestamp: kline[0], // open timestamp
-        volume: parseFloat(kline[5]), // volume
+        volume: parseFloat(kline[5]),
+        isClosed: true,
+        interval: this.interval,
       }));
 
-      return ticks;
+      return candles;
     } catch (error) {
       if (error instanceof Error) {
         throw new Error(`Failed to fetch historical candles: ${error.message}`);
@@ -83,11 +88,11 @@ export class BinanceRestClient {
   /**
    * Fetch candles with progress callback
    * @param onProgress Called with (current, total) as candles are fetched
-   * @returns Array of MarketTick objects
+   * @returns Array of Candle objects with OHLC data
    */
   public async fetchWithProgress(
     onProgress: (current: number, total: number) => void
-  ): Promise<MarketTick[]> {
+  ): Promise<Candle[]> {
     onProgress(0, this.limit);
     
     const candles = await this.fetchHistoricalCandles();

@@ -68,7 +68,7 @@ describe('BinanceRestClient', () => {
       global.fetch = originalFetch;
     });
 
-    it('should transform Binance klines to MarketTick format', async () => {
+    it('should transform Binance klines to Candle format with OHLC', async () => {
       const mockKlines: Array<[number, string, string, string, string, string, number, string, number, string, string, string]> = [
         [1234567890000, '50000', '51000', '49000', '50500', '1.5', 1234567950000, '75750', 100, '0.75', '37875', '0'],
         [1234567950000, '50500', '51500', '49500', '51000', '2.0', 1234568010000, '102000', 150, '1.0', '51000', '0'],
@@ -85,15 +85,25 @@ describe('BinanceRestClient', () => {
       expect(candles).toHaveLength(2);
       expect(candles[0]).toEqual({
         symbol: 'BTCUSDT',
-        price: 50500,
+        open: 50000,
+        high: 51000,
+        low: 49000,
+        close: 50500,
         timestamp: 1234567890000,
         volume: 1.5,
+        isClosed: true,
+        interval: '1m',
       });
       expect(candles[1]).toEqual({
         symbol: 'BTCUSDT',
-        price: 51000,
+        open: 50500,
+        high: 51500,
+        low: 49500,
+        close: 51000,
         timestamp: 1234567950000,
         volume: 2.0,
+        isClosed: true,
+        interval: '1m',
       });
 
       global.fetch = originalFetch;

@@ -1,6 +1,6 @@
 import { BingXWsIngester } from './BingXWsIngester';
 import { EventBus } from '../core/EventBus';
-import { MarketTick } from '../domain/MarketTick';
+import { Candle } from '../domain/MarketTick';
 import WebSocket from 'ws';
 
 jest.mock('ws');
@@ -41,7 +41,7 @@ describe('BingXWsIngester', () => {
     jest.useRealTimers();
   });
 
-  it('Test 1: successfully parses a mocked BingX K-line JSON message and publishes a MarketTick', () => {
+  it('Test 1: successfully parses a mocked BingX K-line JSON message and publishes a Candle', () => {
     ingester = new BingXWsIngester(eventBus, 'BTC-USDT');
     ingester.start();
     
@@ -72,11 +72,16 @@ describe('BingXWsIngester', () => {
       eventHandlers['message'](Buffer.from(mockMessage));
     }
 
-    expect(emitSpy).toHaveBeenCalledWith('MarketTick', {
+    expect(emitSpy).toHaveBeenCalledWith('candle_closed', {
       symbol: 'BTC-USDT',
-      price: 43500.5,
+      open: 43500.5,
+      high: 43500.5,
+      low: 43500.5,
+      close: 43500.5,
       timestamp: 1614567890000,
-      volume: 2.5
+      volume: 2.5,
+      isClosed: true,
+      interval: '1m'
     });
   });
 

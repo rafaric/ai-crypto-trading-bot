@@ -1,8 +1,9 @@
-import { MarketTick } from '../../../shared/src/events';
+import { Candle } from '../../../shared/src/events';
 
 /**
  * Calculates Volume Weighted Average Price (VWAP)
- * Formula: VWAP = Σ(Price × Volume) / Σ(Volume)
+ * Formula: VWAP = Σ(TypicalPrice × Volume) / Σ(Volume)
+ * Typical Price = (High + Low + Close) / 3
  * 
  * VWAP is cumulative during a trading session.
  * For crypto 24/7, we calculate it over a rolling window of N periods
@@ -18,11 +19,19 @@ export class VWAP {
   }
 
   /**
-   * Calculate VWAP from an array of ticks
+   * Calculate typical price for a candle
+   * Typical Price = (High + Low + Close) / 3
+   */
+  private calculateTypicalPrice(candle: Candle): number {
+    return (candle.high + candle.low + candle.close) / 3;
+  }
+
+  /**
+   * Calculate VWAP from an array of candles
    * Returns array of VWAP values (null for first period where volume is 0)
    */
-  calculate(ticks: MarketTick[]): (number | null)[] {
-    if (ticks.length === 0) {
+  calculate(candles: Candle[]): (number | null)[] {
+    if (candles.length === 0) {
       return [];
     }
 
@@ -30,15 +39,12 @@ export class VWAP {
     let sumTypicalPriceVolume = 0;
     let sumVolume = 0;
 
-    for (let i = 0; i < ticks.length; i++) {
-      const tick = ticks[i];
+    for (let i = 0; i < candles.length; i++) {
+      const candle = candles[i];
+      const typicalPrice = this.calculateTypicalPrice(candle);
       
-      // Typical Price = (High + Low + Close) / 3
-      // Since we only have close price in MarketTick, we use that
-      const typicalPrice = tick.price;
-      
-      sumTypicalPriceVolume += typicalPrice * tick.volume;
-      sumVolume += tick.volume;
+      sumTypicalPriceVolume += typicalPrice * candle.volume;
+      sumVolume += candle.volume;
 
       if (sumVolume === 0) {
         result.push(null);
@@ -55,23 +61,24 @@ export class VWAP {
    * Calculate rolling VWAP over a window
    * Only considers last N periods for calculation
    */
-  calculateRolling(ticks: MarketTick[]): (number | null)[] {
-    if (ticks.length === 0) {
+  calculateRolling(candles: Candle[]): (number | null)[] {
+    if (candles.length === 0) {
       return [];
     }
 
     const result: (number | null)[] = [];
 
-    for (let i = 0; i < ticks.length; i++) {
+    for (let i = 0; i < candles.length; i++) {
       const windowStart = Math.max(0, i - this.period + 1);
-      const window = ticks.slice(windowStart, i + 1);
+      const window = candles.slice(windowStart, i + 1);
       
       let sumTypicalPriceVolume = 0;
       let sumVolume = 0;
 
-      for (const tick of window) {
-        sumTypicalPriceVolume += tick.price * tick.volume;
-        sumVolume += tick.volume;
+      for (const candle of window) {
+        const typicalPrice = this.calculateTypicalPrice(candle);
+        sumTypicalPriceVolume += typicalPrice * candle.volume;
+        sumVolume += candle.volume;
       }
 
       if (sumVolume === 0) {
@@ -85,13 +92,13 @@ export class VWAP {
   }
 
   /**
-   * Update VWAP with a new tick (cumulative calculation)
+   * Update VWAP with a new candle (cumulative calculation)
    */
-  update(tick: MarketTick): number {
-    const typicalPrice = tick.price;
+  update(candle: Candle): number {
+    const typicalPrice = this.calculateTypicalPrice(candle);
     
-    this.cumulativeTypicalPriceVolume += typicalPrice * tick.volume;
-    this.cumulativeVolume += tick.volume;
+    this.cumulativeTypicalPriceVolume += typicalPrice * candle.volume;
+    this.cumulativeVolume += candle.volume;
     this.values.push(this.cumulativeTypicalPriceVolume / this.cumulativeVolume);
     
     // Keep only last N values for rolling calculation

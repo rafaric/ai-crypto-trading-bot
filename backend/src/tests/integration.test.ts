@@ -2,7 +2,7 @@ import { EventBus } from '../core/EventBus';
 import { IndicatorEngine } from '../engine/IndicatorEngine';
 import { PaperTradingEngine } from '../execution/PaperTradingEngine';
 import { ITradeRepository, Trade } from '../infrastructure/db/ITradeRepository';
-import { MarketTick } from '../../../shared/src/events';
+import { Candle } from '../../../shared/src/events';
 
 /**
  * Integration Test: End-to-End Pipeline
@@ -64,17 +64,17 @@ describe('Integration: End-to-End Pipeline', () => {
 
     // Simulate 10 candles being published to EventBus
     // These candles simulate a bullish trend that might trigger patterns
-    const candles: MarketTick[] = [
-      { symbol: 'BTC/USDT', price: 50000, timestamp: Date.now() - 90000, volume: 1000 },
-      { symbol: 'BTC/USDT', price: 50100, timestamp: Date.now() - 80000, volume: 1200 },
-      { symbol: 'BTC/USDT', price: 50200, timestamp: Date.now() - 70000, volume: 1100 },
-      { symbol: 'BTC/USDT', price: 50150, timestamp: Date.now() - 60000, volume: 1300 },
-      { symbol: 'BTC/USDT', price: 50300, timestamp: Date.now() - 50000, volume: 1500 },
-      { symbol: 'BTC/USDT', price: 50400, timestamp: Date.now() - 40000, volume: 1400 },
-      { symbol: 'BTC/USDT', price: 50500, timestamp: Date.now() - 30000, volume: 1600 },
-      { symbol: 'BTC/USDT', price: 50450, timestamp: Date.now() - 20000, volume: 1300 },
-      { symbol: 'BTC/USDT', price: 50600, timestamp: Date.now() - 10000, volume: 1700 },
-      { symbol: 'BTC/USDT', price: 50700, timestamp: Date.now(), volume: 1800 },
+    const candles: Candle[] = [
+      { symbol: 'BTC/USDT', open: 50000, high: 50000, low: 50000, close: 50000, timestamp: Date.now() - 90000, volume: 1000 },
+      { symbol: 'BTC/USDT', open: 50100, high: 50100, low: 50100, close: 50100, timestamp: Date.now() - 80000, volume: 1200 },
+      { symbol: 'BTC/USDT', open: 50200, high: 50200, low: 50200, close: 50200, timestamp: Date.now() - 70000, volume: 1100 },
+      { symbol: 'BTC/USDT', open: 50150, high: 50150, low: 50150, close: 50150, timestamp: Date.now() - 60000, volume: 1300 },
+      { symbol: 'BTC/USDT', open: 50300, high: 50300, low: 50300, close: 50300, timestamp: Date.now() - 50000, volume: 1500 },
+      { symbol: 'BTC/USDT', open: 50400, high: 50400, low: 50400, close: 50400, timestamp: Date.now() - 40000, volume: 1400 },
+      { symbol: 'BTC/USDT', open: 50500, high: 50500, low: 50500, close: 50500, timestamp: Date.now() - 30000, volume: 1600 },
+      { symbol: 'BTC/USDT', open: 50450, high: 50450, low: 50450, close: 50450, timestamp: Date.now() - 20000, volume: 1300 },
+      { symbol: 'BTC/USDT', open: 50600, high: 50600, low: 50600, close: 50600, timestamp: Date.now() - 10000, volume: 1700 },
+      { symbol: 'BTC/USDT', open: 50700, high: 50700, low: 50700, close: 50700, timestamp: Date.now(), volume: 1800 },
     ];
 
     // Publish candles with small delays to simulate real-time flow
@@ -101,8 +101,8 @@ describe('Integration: End-to-End Pipeline', () => {
     // Verify 2: IndicatorEngine has cached all candles
     const cachedCandles = indicatorEngine.getCandlesCache();
     expect(cachedCandles.length).toBe(10);
-    expect(cachedCandles[0].price).toBe(50000);
-    expect(cachedCandles[9].price).toBe(50700);
+    expect(cachedCandles[0].close).toBe(50000);
+    expect(cachedCandles[9].close).toBe(50700);
 
     // Verify 3: Each indicators_updated event has correct structure
     indicatorsUpdatedEvents.forEach((event, index) => {
@@ -129,13 +129,13 @@ describe('Integration: End-to-End Pipeline', () => {
 
     // Create candles that form a bullish engulfing pattern
     // Pattern: Bearish candle followed by larger bullish candle that engulfs it
-    const bullishEngulfingCandles: MarketTick[] = [
-      { symbol: 'BTC/USDT', price: 50000, timestamp: Date.now() - 20000, volume: 1000 },
-      { symbol: 'BTC/USDT', price: 50500, timestamp: Date.now() - 10000, volume: 1500 },
+    const bullishEngulfingCandles: Candle[] = [
+      { symbol: 'BTC/USDT', open: 50000, high: 50000, low: 50000, close: 50000, timestamp: Date.now() - 20000, volume: 1000 },
+      { symbol: 'BTC/USDT', open: 50500, high: 50500, low: 50500, close: 50500, timestamp: Date.now() - 10000, volume: 1500 },
       // Bearish candle
-      { symbol: 'BTC/USDT', price: 50400, timestamp: Date.now() - 5000, volume: 1200 },
+      { symbol: 'BTC/USDT', open: 50400, high: 50400, low: 50400, close: 50400, timestamp: Date.now() - 5000, volume: 1200 },
       // Bullish engulfing candle (larger body, higher close)
-      { symbol: 'BTC/USDT', price: 51000, timestamp: Date.now(), volume: 2000 },
+      { symbol: 'BTC/USDT', open: 51000, high: 51000, low: 51000, close: 51000, timestamp: Date.now(), volume: 2000 },
     ];
 
     // Publish candles
@@ -178,11 +178,15 @@ describe('Integration: End-to-End Pipeline', () => {
     });
 
     // Create 50 candles to test performance
-    const manyCandles: MarketTick[] = [];
+    const manyCandles: Candle[] = [];
     for (let i = 0; i < 50; i++) {
+      const close = 50000 + Math.random() * 1000;
       manyCandles.push({
         symbol: 'BTC/USDT',
-        price: 50000 + Math.random() * 1000,
+        open: close,
+        high: close,
+        low: close,
+        close,
         timestamp: Date.now() - (50 - i) * 60000,
         volume: 1000 + Math.random() * 1000,
       });
@@ -219,9 +223,12 @@ describe('Integration: End-to-End Pipeline', () => {
     );
 
     // Publish a candle
-    const testCandle: MarketTick = {
+    const testCandle: Candle = {
       symbol: 'ETH/USDT',
-      price: 3000,
+      open: 3000,
+      high: 3000,
+      low: 3000,
+      close: 3000,
       timestamp: Date.now(),
       volume: 500,
     };
@@ -267,10 +274,10 @@ describe('Integration: End-to-End Pipeline', () => {
     eventBus.subscribe('SignalGenerated', () => flowLog.push('4. SignalGenerated received by PaperTradingEngine'));
 
     // Simulate a candle that might trigger a pattern
-    const candles: MarketTick[] = [
-      { symbol: 'BTC/USDT', price: 50000, timestamp: Date.now() - 2000, volume: 1000 },
-      { symbol: 'BTC/USDT', price: 50500, timestamp: Date.now() - 1000, volume: 1500 },
-      { symbol: 'BTC/USDT', price: 51000, timestamp: Date.now(), volume: 2000 },
+    const candles: Candle[] = [
+      { symbol: 'BTC/USDT', open: 50000, high: 50000, low: 50000, close: 50000, timestamp: Date.now() - 2000, volume: 1000 },
+      { symbol: 'BTC/USDT', open: 50500, high: 50500, low: 50500, close: 50500, timestamp: Date.now() - 1000, volume: 1500 },
+      { symbol: 'BTC/USDT', open: 51000, high: 51000, low: 51000, close: 51000, timestamp: Date.now(), volume: 2000 },
     ];
 
     for (const candle of candles) {

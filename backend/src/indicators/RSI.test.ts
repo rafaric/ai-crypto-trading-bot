@@ -1,5 +1,5 @@
 import { RSI } from './RSI';
-import { MarketTick } from '../../../shared/src/events';
+import { Candle } from '../../../shared/src/events';
 
 describe('RSI', () => {
   describe('initialization', () => {
@@ -83,12 +83,12 @@ describe('RSI', () => {
   describe('calculate from ticks', () => {
     it('should return null array if insufficient ticks', () => {
       const rsi = new RSI(5);
-      const ticks: MarketTick[] = [
-        { symbol: 'BTC', price: 100, timestamp: 1, volume: 1 },
-        { symbol: 'BTC', price: 110, timestamp: 2, volume: 1 },
-        { symbol: 'BTC', price: 120, timestamp: 3, volume: 1 },
-        { symbol: 'BTC', price: 130, timestamp: 4, volume: 1 },
-        { symbol: 'BTC', price: 140, timestamp: 5, volume: 1 },
+      const ticks: Candle[] = [
+        { symbol: 'BTC', open: 100, high: 100, low: 100, close: 100, timestamp: 1, volume: 1 },
+        { symbol: 'BTC', open: 110, high: 110, low: 110, close: 110, timestamp: 2, volume: 1 },
+        { symbol: 'BTC', open: 120, high: 120, low: 120, close: 120, timestamp: 3, volume: 1 },
+        { symbol: 'BTC', open: 130, high: 130, low: 130, close: 130, timestamp: 4, volume: 1 },
+        { symbol: 'BTC', open: 140, high: 140, low: 140, close: 140, timestamp: 5, volume: 1 },
       ]; // Need 6, have 5
       
       const result = rsi.calculate(ticks);
@@ -98,13 +98,13 @@ describe('RSI', () => {
 
     it('should detect overbought condition', () => {
       const rsi = new RSI(3);
-      const ticks: MarketTick[] = [
-        { symbol: 'BTC', price: 100, timestamp: 1, volume: 1 },
-        { symbol: 'BTC', price: 110, timestamp: 2, volume: 1 },
-        { symbol: 'BTC', price: 120, timestamp: 3, volume: 1 },
-        { symbol: 'BTC', price: 140, timestamp: 4, volume: 1 }, // Big jump
-        { symbol: 'BTC', price: 170, timestamp: 5, volume: 1 }, // Bigger jump
-        { symbol: 'BTC', price: 200, timestamp: 6, volume: 1 }, // Huge jump
+      const ticks: Candle[] = [
+        { symbol: 'BTC', open: 100, high: 100, low: 100, close: 100, timestamp: 1, volume: 1 },
+        { symbol: 'BTC', open: 110, high: 110, low: 110, close: 110, timestamp: 2, volume: 1 },
+        { symbol: 'BTC', open: 120, high: 120, low: 120, close: 120, timestamp: 3, volume: 1 },
+        { symbol: 'BTC', open: 140, high: 140, low: 140, close: 140, timestamp: 4, volume: 1 }, // Big jump
+        { symbol: 'BTC', open: 170, high: 170, low: 170, close: 170, timestamp: 5, volume: 1 }, // Bigger jump
+        { symbol: 'BTC', open: 200, high: 200, low: 200, close: 200, timestamp: 6, volume: 1 }, // Huge jump
       ];
       
       const result = rsi.calculate(ticks);
@@ -116,13 +116,13 @@ describe('RSI', () => {
 
     it('should detect oversold condition', () => {
       const rsi = new RSI(3);
-      const ticks: MarketTick[] = [
-        { symbol: 'BTC', price: 200, timestamp: 1, volume: 1 },
-        { symbol: 'BTC', price: 190, timestamp: 2, volume: 1 },
-        { symbol: 'BTC', price: 180, timestamp: 3, volume: 1 },
-        { symbol: 'BTC', price: 160, timestamp: 4, volume: 1 }, // Big drop
-        { symbol: 'BTC', price: 130, timestamp: 5, volume: 1 }, // Bigger drop
-        { symbol: 'BTC', price: 100, timestamp: 6, volume: 1 }, // Huge drop
+      const ticks: Candle[] = [
+        { symbol: 'BTC', open: 200, high: 200, low: 200, close: 200, timestamp: 1, volume: 1 },
+        { symbol: 'BTC', open: 190, high: 190, low: 190, close: 190, timestamp: 2, volume: 1 },
+        { symbol: 'BTC', open: 180, high: 180, low: 180, close: 180, timestamp: 3, volume: 1 },
+        { symbol: 'BTC', open: 160, high: 160, low: 160, close: 160, timestamp: 4, volume: 1 }, // Big drop
+        { symbol: 'BTC', open: 130, high: 130, low: 130, close: 130, timestamp: 5, volume: 1 }, // Bigger drop
+        { symbol: 'BTC', open: 100, high: 100, low: 100, close: 100, timestamp: 6, volume: 1 }, // Huge drop
       ];
       
       const result = rsi.calculate(ticks);
@@ -134,7 +134,7 @@ describe('RSI', () => {
 
     it('should work with RSI 14 period', () => {
       const rsi = new RSI(14);
-      const ticks: MarketTick[] = [];
+      const ticks: Candle[] = [];
       
       // Generate 20 ticks with alternating up/down
       let price = 100;
@@ -142,7 +142,10 @@ describe('RSI', () => {
         price += (i % 2 === 0 ? 5 : -3); // Slight upward bias
         ticks.push({
           symbol: 'BTC',
-          price,
+          open: price,
+          high: price,
+          low: price,
+          close: price,
           timestamp: i,
           volume: 1
         });

@@ -1,6 +1,6 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { EventBus } from '../core/EventBus';
-import { MarketTick, SignalGenerated } from '../../../shared/src/events';
+import { Candle, SignalGenerated } from '../../../shared/src/events';
 import { IndicatorsUpdatedEvent } from '../engine/IndicatorEngine';
 
 export class FrontendGateway {
@@ -61,7 +61,7 @@ export class FrontendGateway {
     console.log(`✅ Frontend Gateway listening on ws://localhost:${port}`);
 
     // Subscribe to events and broadcast them to all connected clients
-    this.unsubscribeCandle = this.eventBus.subscribe<MarketTick>('candle_closed', (payload) => {
+    this.unsubscribeCandle = this.eventBus.subscribe<Candle>('candle_closed', (payload) => {
       this.broadcast('candle_closed', payload);
     });
 

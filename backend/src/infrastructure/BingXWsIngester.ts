@@ -1,6 +1,6 @@
 import WebSocket from 'ws';
 import { EventBus } from '../core/EventBus';
-import { MarketTick } from '../domain/MarketTick';
+import { Candle } from '../domain/MarketTick';
 
 export class BingXWsIngester {
   private ws: WebSocket | null = null;
@@ -84,13 +84,18 @@ export class BingXWsIngester {
         const klineData = Array.isArray(parsed.data) ? parsed.data[0] : parsed.data;
         
         if (klineData && klineData.c && klineData.T) {
-          const tick: MarketTick = {
+          const candle: Candle = {
             symbol: this.symbol,
-            price: parseFloat(klineData.c),
+            open: parseFloat(klineData.o || klineData.c),
+            high: parseFloat(klineData.h || klineData.c),
+            low: parseFloat(klineData.l || klineData.c),
+            close: parseFloat(klineData.c),
             timestamp: parseInt(klineData.T, 10),
-            volume: klineData.v ? parseFloat(klineData.v) : undefined
+            volume: klineData.v ? parseFloat(klineData.v) : 0,
+            isClosed: true,
+            interval: '1m'
           };
-          this.eventBus.publish('MarketTick', tick);
+          this.eventBus.publish('candle_closed', candle);
         }
       }
     } catch (e) {
