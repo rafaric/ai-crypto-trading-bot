@@ -13,8 +13,20 @@ export class FrontendGateway {
   constructor(private eventBus: EventBus, port: number = 8081) {
     this.wss = new WebSocketServer({ port });
 
+    // Rate limiting for connections
+    let lastConnectionTime = 0;
+    const minConnectionInterval = 2000; // 2 seconds between connections
+
     // Handle new WebSocket connections
     this.wss.on('connection', (ws: WebSocket) => {
+      const now = Date.now();
+      if (now - lastConnectionTime < minConnectionInterval) {
+        console.log('⚠️  Connection attempt too fast, rejecting');
+        ws.close();
+        return;
+      }
+      lastConnectionTime = now;
+
       console.log('🔌 Frontend client connected');
       this.clients.add(ws);
 
@@ -24,15 +36,31 @@ export class FrontendGateway {
         payload: { message: 'Connected to AI Trading Bot' }
       }));
 
+      // Send initial data burst (last candle if available)
+      // This helps the frontend populate immediately
+      
+      // Heartbeat to detect dead connections
+      const heartbeat = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.ping();
+        }
+      }, 30000); // Ping every 30 seconds
+
+      ws.on('pong', () => {
+        // Client is alive
+      });
+
       // Handle client disconnect
       ws.on('close', () => {
         console.log('🔌 Frontend client disconnected');
+        clearInterval(heartbeat);
         this.clients.delete(ws);
       });
 
       // Handle errors
       ws.on('error', (error) => {
         console.error('WebSocket client error:', error);
+        clearInterval(heartbeat);
         this.clients.delete(ws);
       });
     });

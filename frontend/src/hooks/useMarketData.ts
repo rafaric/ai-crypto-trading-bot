@@ -23,6 +23,8 @@ export function useMarketData() {
   const [connected, setConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectAttemptsRef = useRef(0);
+  const maxReconnectDelay = 30000; // Max 30 seconds
 
   useEffect(() => {
     let isSubscribed = true;
@@ -46,20 +48,44 @@ export function useMarketData() {
         }
         console.log('✅ Connected to trading bot backend');
         setConnected(true);
+        reconnectAttemptsRef.current = 0; // Reset on successful connection
+        
+        // Send ping every 25 seconds to keep connection alive
+        const pingInterval = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'ping' }));
+          }
+        }, 25000);
+        
+        // Store interval to clear on close
+        (ws as any).pingInterval = pingInterval;
       };
 
       ws.onclose = (event) => {
+        if (!isSubscribed) return;
+        
+        // Clear ping interval
+        if ((ws as any).pingInterval) {
+          clearInterval((ws as any).pingInterval);
+        }
+        
         console.log('❌ Disconnected from backend', event.code, event.reason);
         setConnected(false);
         wsRef.current = null;
         
-        // Auto-reconnect after 3 seconds
-        if (isSubscribed && !reconnectTimeoutRef.current) {
-          console.log('🔄 Attempting to reconnect in 3s...');
+        // Exponential backoff for reconnection
+        if (!reconnectTimeoutRef.current) {
+          const delay = Math.min(
+            1000 * Math.pow(2, reconnectAttemptsRef.current),
+            maxReconnectDelay
+          );
+          reconnectAttemptsRef.current++;
+          
+          console.log(`🔄 Attempting to reconnect in ${delay}ms... (attempt ${reconnectAttemptsRef.current})`);
           reconnectTimeoutRef.current = setTimeout(() => {
             reconnectTimeoutRef.current = null;
             connect();
-          }, 3000);
+          }, delay);
         }
       };
 
