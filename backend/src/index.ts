@@ -101,6 +101,23 @@ setInterval(() => {
   eventBus.publish('candle_closed', candle);
 }, 2000);
 
+// Pre-load historical candles to initialize indicators
+console.log('\n📚 Pre-loading 250 historical candles...');
+let histPrice = 65000;
+for (let i = 0; i < 250; i++) {
+  const change = (Math.random() - 0.5) * 150;
+  histPrice += change;
+  histPrice = Math.max(1000, histPrice);
+  
+  eventBus.publish<MarketTick>('candle_closed', {
+    symbol: 'BTC/USDT',
+    price: histPrice,
+    timestamp: Date.now() - (250 - i) * 60000, // 1 min apart
+    volume: 0.5 + Math.random() * 4.5
+  });
+}
+console.log('✅ Historical data loaded - indicators initialized\n');
+
 console.log('🎯 The bot is now running!');
 console.log('   - Open http://localhost:5173 to see the dashboard');
 console.log('   - Watch for pattern detection signals in this terminal\n');
