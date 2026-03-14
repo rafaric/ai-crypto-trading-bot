@@ -74,6 +74,7 @@ export class BinanceRestClient {
         volume: parseFloat(kline[5]),
         isClosed: true,
         interval: this.interval,
+        isHistorical: true,
       }));
 
       return candles;

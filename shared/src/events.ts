@@ -8,6 +8,7 @@ export interface Candle {
   volume: number;
   isClosed?: boolean;
   interval?: string;
+  isHistorical?: boolean;
 }
 
 export interface SignalGenerated {

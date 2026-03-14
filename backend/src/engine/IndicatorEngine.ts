@@ -134,6 +134,12 @@ export class IndicatorEngine {
       timestamp: Date.now(),
     });
 
+    // Skip signal generation for historical candles
+    if (candle.isHistorical) {
+      console.log(`⏳ Skipping signal check for historical candle`);
+      return;
+    }
+
     // Check for signals and emit if found (with deduplication)
     const signal = this.checkForSignals(indicators);
     if (signal && this.shouldEmitSignal(candle.symbol, signal.pattern)) {
