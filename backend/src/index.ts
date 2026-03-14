@@ -11,6 +11,7 @@ import { ITradeRepository, Trade } from './infrastructure/db/ITradeRepository';
 import { SignalGenerated, MarketTick } from '../../shared/src/events';
 import { BinanceWsClient } from './infrastructure/BinanceWsClient';
 import { BinanceRestClient } from './infrastructure/BinanceRestClient';
+import { TelegramService } from './services/TelegramService';
 
 // Simple in-memory trade repository for demo
 class InMemoryTradeRepository implements ITradeRepository {
@@ -42,6 +43,16 @@ const paperTradingEngine = new PaperTradingEngine(tradeRepository);
 paperTradingEngine.startListening(eventBus);
 console.log('✅ PaperTradingEngine initialized - ready to simulate trades\n');
 
+// Initialize Telegram Service for notifications
+const telegramService = new TelegramService();
+const telegramConfigured = process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID;
+if (telegramConfigured) {
+  console.log('📱 Telegram notifications enabled');
+  telegramService.sendMessage('🤖 <b>AI Crypto Trading Bot</b> iniciado\n\n✅ Conectado a Binance\n✅ Paper Trading activo\n✅ Listo para detectar señales');
+} else {
+  console.log('⚠️  Telegram not configured - set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env');
+}
+
 // Subscribe to events to log activity
 let candleCount = 0;
 let signalCount = 0;
@@ -55,7 +66,7 @@ eventBus.subscribe('indicators_updated', () => {
   // Indicators calculated - this happens automatically
 });
 
-eventBus.subscribe<SignalGenerated>('SignalGenerated', (signal) => {
+eventBus.subscribe<SignalGenerated>('SignalGenerated', async (signal) => {
   signalCount++;
   const emoji = signal.action === 'BUY' ? '🟢' : '🔴';
   console.log(`\n${emoji} SIGNAL DETECTED!`);
@@ -64,14 +75,27 @@ eventBus.subscribe<SignalGenerated>('SignalGenerated', (signal) => {
   console.log(`   Strategy: ${signal.strategy || 'Unknown'}`);
   console.log(`   Confidence: ${(signal.confidence * 100).toFixed(1)}%`);
   console.log(`   Time: ${new Date(signal.timestamp).toLocaleTimeString()}`);
+  
+  // Send Telegram notification
+  await telegramService.sendSignalAlert(signal);
 });
 
-eventBus.subscribe<Trade>('trade_executed', (trade) => {
+eventBus.subscribe<Trade>('trade_executed', async (trade) => {
   console.log(`\n💰 PAPER TRADE EXECUTED!`);
   console.log(`   Symbol: ${trade.symbol}`);
   console.log(`   Side: ${trade.action}`);
   console.log(`   Entry: $${trade.price.toFixed(2)}`);
   console.log(`   Simulated: ${trade.simulated}`);
+  
+  // Send Telegram notification
+  await telegramService.sendTradeNotification({
+    symbol: trade.symbol,
+    side: trade.action,
+    amount: 0.01, // Simulated amount for demo
+    price: trade.price,
+    total: 0.01 * trade.price, // Simulated total
+    timestamp: trade.timestamp,
+  });
 });
 
 console.log('✅ Frontend Gateway listening on ws://localhost:8081');
