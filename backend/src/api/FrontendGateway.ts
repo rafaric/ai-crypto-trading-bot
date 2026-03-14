@@ -9,6 +9,9 @@ export class FrontendGateway {
   private unsubscribeCandle: (() => void) | null = null;
   private unsubscribeIndicators: (() => void) | null = null;
   private unsubscribeSignal: (() => void) | null = null;
+  private candlesCache: Candle[] = [];
+  private readonly MAX_CACHED_CANDLES = 200;
+  private latestIndicators: IndicatorsUpdatedEvent | null = null;
 
   constructor(private eventBus: EventBus, port: number = 8081) {
     this.wss = new WebSocketServer({ port });
@@ -19,14 +22,24 @@ export class FrontendGateway {
       this.clients.add(ws);
 
       // Send welcome message
-      ws.send(JSON.stringify({ 
-        type: 'connected', 
+      ws.send(JSON.stringify({
+        type: 'connected',
         payload: { message: 'Connected to AI Trading Bot' }
       }));
 
-      // Send initial data burst (last candle if available)
-      // This helps the frontend populate immediately
-      
+      // Send cached candles to new client so they see full history
+      if (this.candlesCache.length > 0) {
+        console.log(`📊 Sending ${this.candlesCache.length} historical candles to new client`);
+        for (const candle of this.candlesCache) {
+          ws.send(JSON.stringify({ type: 'candle_closed', payload: candle }));
+        }
+      }
+
+      // Send latest indicators state if available
+      if (this.latestIndicators) {
+        ws.send(JSON.stringify({ type: 'indicators_updated', payload: this.latestIndicators }));
+      }
+
       // Heartbeat to detect dead connections
       const heartbeat = setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) {
@@ -62,10 +75,17 @@ export class FrontendGateway {
 
     // Subscribe to events and broadcast them to all connected clients
     this.unsubscribeCandle = this.eventBus.subscribe<Candle>('candle_closed', (payload) => {
+      // Add candle to cache for late-connecting clients
+      this.candlesCache.push(payload);
+      if (this.candlesCache.length > this.MAX_CACHED_CANDLES) {
+        this.candlesCache.shift();
+      }
       this.broadcast('candle_closed', payload);
     });
 
     this.unsubscribeIndicators = this.eventBus.subscribe<IndicatorsUpdatedEvent>('indicators_updated', (payload) => {
+      // Store latest indicators for late-connecting clients
+      this.latestIndicators = payload;
       this.broadcast('indicators_updated', payload);
     });
 
