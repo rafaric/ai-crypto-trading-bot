@@ -1,0 +1,24 @@
+{
+  "name": "shared",
+  "version": "1.0.0",
+  "description": "",
+  "main": "src/events.js",
+  "types": "src/events.d.ts",
+  "exports": {
+    "./events": {
+      "types": "./src/events.d.ts",
+      "default": "./src/events.js"
+    },
+    "./interfaces": {
+      "types": "./src/interfaces.d.ts",
+      "default": "./src/interfaces.js"
+    }
+  },
+  "scripts": {
+    "test": "echo \"No test specified\" && exit 0"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs"
+}

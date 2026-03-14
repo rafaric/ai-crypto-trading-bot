@@ -1,0 +1,36 @@
+{
+  "name": "superbot",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "NODE_OPTIONS=\"--localstorage-file=/tmp/jest-localstorage\" jest",
+    "dev": "concurrently \"bun run --cwd backend dev\" \"bun run --cwd frontend dev\""
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rafaric/ai-crypto-trading-bot.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/rafaric/ai-crypto-trading-bot/issues"
+  },
+  "homepage": "https://github.com/rafaric/ai-crypto-trading-bot#readme",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "frontend",
+    "shared"
+  ],
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^25.5.0",
+    "concurrently": "^9.2.1",
+    "jest": "^30.3.0",
+    "ts-jest": "^29.4.6",
+    "typescript": "^5.9.3"
+  }
+}
