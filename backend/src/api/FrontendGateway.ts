@@ -1,37 +1,95 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { EventBus } from '../core/EventBus';
 import { MarketTick, SignalGenerated } from '../../../shared/src/events';
+import { IndicatorsUpdatedEvent } from '../engine/IndicatorEngine';
 
 export class FrontendGateway {
   private wss: WebSocketServer;
-  private unsubscribeMarketTick: () => void;
-  private unsubscribeSignalGenerated: () => void;
+  private clients: Set<WebSocket> = new Set();
+  private unsubscribeCandle: (() => void) | null = null;
+  private unsubscribeIndicators: (() => void) | null = null;
+  private unsubscribeSignal: (() => void) | null = null;
 
   constructor(private eventBus: EventBus, port: number = 8081) {
     this.wss = new WebSocketServer({ port });
 
-    // Subscribe to events and broadcast them to all connected clients
-    this.unsubscribeMarketTick = this.eventBus.subscribe<MarketTick>('MarketTick', (payload) => {
-      this.broadcast('MarketTick', payload);
+    // Handle new WebSocket connections
+    this.wss.on('connection', (ws: WebSocket) => {
+      console.log('🔌 Frontend client connected');
+      this.clients.add(ws);
+
+      // Send welcome message
+      ws.send(JSON.stringify({ 
+        type: 'connected', 
+        payload: { message: 'Connected to AI Trading Bot' }
+      }));
+
+      // Handle client disconnect
+      ws.on('close', () => {
+        console.log('🔌 Frontend client disconnected');
+        this.clients.delete(ws);
+      });
+
+      // Handle errors
+      ws.on('error', (error) => {
+        console.error('WebSocket client error:', error);
+        this.clients.delete(ws);
+      });
     });
 
-    this.unsubscribeSignalGenerated = this.eventBus.subscribe<SignalGenerated>('SignalGenerated', (payload) => {
+    // Handle server errors
+    this.wss.on('error', (error) => {
+      console.error('WebSocket server error:', error);
+    });
+
+    console.log(`✅ Frontend Gateway listening on ws://localhost:${port}`);
+
+    // Subscribe to events and broadcast them to all connected clients
+    this.unsubscribeCandle = this.eventBus.subscribe<MarketTick>('candle_closed', (payload) => {
+      this.broadcast('candle_closed', payload);
+    });
+
+    this.unsubscribeIndicators = this.eventBus.subscribe<IndicatorsUpdatedEvent>('indicators_updated', (payload) => {
+      this.broadcast('indicators_updated', payload);
+    });
+
+    this.unsubscribeSignal = this.eventBus.subscribe<SignalGenerated>('SignalGenerated', (payload) => {
       this.broadcast('SignalGenerated', payload);
     });
   }
 
   private broadcast(type: string, payload: any) {
     const message = JSON.stringify({ type, payload });
-    for (const client of this.wss.clients) {
+    let sentCount = 0;
+    
+    for (const client of this.clients) {
       if (client.readyState === WebSocket.OPEN) {
         client.send(message);
+        sentCount++;
       }
+    }
+    
+    // Log only occasionally to avoid spam
+    if (Math.random() < 0.01) {
+      console.log(`📡 Broadcast ${type} to ${sentCount} clients`);
     }
   }
 
   public close() {
-    this.unsubscribeMarketTick();
-    this.unsubscribeSignalGenerated();
+    if (this.unsubscribeCandle) this.unsubscribeCandle();
+    if (this.unsubscribeIndicators) this.unsubscribeIndicators();
+    if (this.unsubscribeSignal) this.unsubscribeSignal();
+    
+    // Close all client connections
+    for (const client of this.clients) {
+      client.close();
+    }
+    this.clients.clear();
+    
     this.wss.close();
+  }
+
+  public getClientCount(): number {
+    return this.clients.size;
   }
 }
