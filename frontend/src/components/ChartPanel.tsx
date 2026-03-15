@@ -85,7 +85,13 @@ export function ChartPanel({ candles, indicators }: ChartPanelProps) {
         title: 'EMA 200',
       });
 
-      const emaData = indicators.emaSeries.map((point) => ({
+      // Deduplicate EMA series by timestamp and sort
+      const uniqueEmaSeries = indicators.emaSeries.filter((point, index, self) =>
+        index === self.findIndex((p) => p.timestamp === point.timestamp)
+      );
+      uniqueEmaSeries.sort((a, b) => a.timestamp - b.timestamp);
+
+      const emaData = uniqueEmaSeries.map((point) => ({
         time: (point.timestamp / 1000) as Time,
         value: point.value,
       }));
@@ -101,7 +107,13 @@ export function ChartPanel({ candles, indicators }: ChartPanelProps) {
         title: 'VWAP',
       });
 
-      const vwapData = indicators.vwapSeries.map((point) => ({
+      // Deduplicate VWAP series by timestamp and sort
+      const uniqueVwapSeries = indicators.vwapSeries.filter((point, index, self) =>
+        index === self.findIndex((p) => p.timestamp === point.timestamp)
+      );
+      uniqueVwapSeries.sort((a, b) => a.timestamp - b.timestamp);
+
+      const vwapData = uniqueVwapSeries.map((point) => ({
         time: (point.timestamp / 1000) as Time,
         value: point.value,
       }));
