@@ -7,13 +7,17 @@ import { MACD, MACDResult } from '../indicators/MACD';
 import { ATR } from '../indicators/ATR';
 import { CandlestickPatterns } from '../indicators/CandlestickPatterns';
 
+import type { IndicatorSeries } from '../../../shared/src/events';
+
 export interface IndicatorValues {
   ema: {
     value: number | null;
+    series: IndicatorSeries[];
     period: number;
   };
   vwap: {
     value: number | null;
+    series: IndicatorSeries[];
     period: number;
   };
   rsi: {
@@ -162,16 +166,28 @@ export class IndicatorEngine {
 
     // Calculate EMA (needs at least 200 periods)
     let emaValue: number | null = null;
+    let emaSeries: IndicatorSeries[] = [];
     if (candles.length >= this.ema.getPeriod()) {
       const emaValues = this.ema.calculate(candles);
       emaValue = emaValues[emaValues.length - 1] ?? null;
+      // Build series with timestamps for chart rendering
+      emaSeries = candles.slice(-emaValues.length).map((candle, index) => ({
+        timestamp: candle.timestamp,
+        value: emaValues[index]!,
+      }));
     }
 
     // Calculate VWAP (works with any amount of data)
     let vwapValue: number | null = null;
+    let vwapSeries: IndicatorSeries[] = [];
     if (candles.length > 0) {
       const vwapValues = this.vwap.calculateRolling(candles);
       vwapValue = vwapValues[vwapValues.length - 1] ?? null;
+      // Build series with timestamps for chart rendering
+      vwapSeries = candles.slice(-vwapValues.length).map((candle, index) => ({
+        timestamp: candle.timestamp,
+        value: vwapValues[index]!,
+      }));
     }
 
     // Calculate RSI (needs at least 15 periods)
@@ -220,10 +236,12 @@ export class IndicatorEngine {
     return {
       ema: {
         value: emaValue,
+        series: emaSeries,
         period: this.ema.getPeriod(),
       },
       vwap: {
         value: vwapValue,
+        series: vwapSeries,
         period: this.vwap.getPeriod(),
       },
       rsi: {

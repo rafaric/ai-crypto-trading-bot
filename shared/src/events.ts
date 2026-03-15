@@ -11,6 +11,11 @@ export interface Candle {
   isHistorical?: boolean;
 }
 
+export interface IndicatorSeries {
+  timestamp: number;
+  value: number;
+}
+
 export interface SignalGenerated {
   symbol: string;
   action: 'BUY' | 'SELL' | 'HOLD';

@@ -1,12 +1,15 @@
 import { useEffect, useRef } from 'react';
 import { createChart, CandlestickSeries, LineSeries, HistogramSeries } from 'lightweight-charts';
-import type { Candle } from '../../../shared/src/events';
+import type { Time } from 'lightweight-charts';
+import type { Candle, IndicatorSeries } from '../../../shared/src/events';
 
 interface ChartPanelProps {
   candles: Candle[];
   indicators?: {
     ema?: number | null;
+    emaSeries?: IndicatorSeries[];
     vwap?: number | null;
+    vwapSeries?: IndicatorSeries[];
   };
 }
 
@@ -15,6 +18,12 @@ export function ChartPanel({ candles, indicators }: ChartPanelProps) {
 
   useEffect(() => {
     if (!chartContainerRef.current || candles.length === 0) return;
+
+    // Deduplicate candles by timestamp and sort
+    const uniqueCandles = candles.filter((candle, index, self) =>
+      index === self.findIndex((c) => c.timestamp === candle.timestamp)
+    );
+    uniqueCandles.sort((a, b) => a.timestamp - b.timestamp);
 
     // Create chart
     const chart = createChart(chartContainerRef.current, {
@@ -50,8 +59,8 @@ export function ChartPanel({ candles, indicators }: ChartPanelProps) {
     });
 
     // Transform candles to chart format
-    const chartData = candles.map((candle) => ({
-      time: candle.timestamp / 1000,
+    const chartData = uniqueCandles.map((candle) => ({
+      time: (candle.timestamp / 1000) as Time,
       open: candle.open,
       high: candle.high,
       low: candle.low,
@@ -60,36 +69,36 @@ export function ChartPanel({ candles, indicators }: ChartPanelProps) {
 
     candlestickSeries.setData(chartData);
 
-    // Add EMA line if available
-    if (indicators?.ema) {
-      const emaSeries = chart.addSeries(LineSeries, {
+    // Add EMA line if series available
+    if (indicators?.emaSeries && indicators.emaSeries.length > 0) {
+      const emaLineSeries = chart.addSeries(LineSeries, {
         color: '#2196f3',
         lineWidth: 2,
         title: 'EMA 200',
       });
-      
-      const emaData = candles.map((candle) => ({
-        time: candle.timestamp / 1000,
-        value: indicators.ema!,
+
+      const emaData = indicators.emaSeries.map((point) => ({
+        time: (point.timestamp / 1000) as Time,
+        value: point.value,
       }));
-      
-      emaSeries.setData(emaData);
+
+      emaLineSeries.setData(emaData);
     }
 
-    // Add VWAP line if available
-    if (indicators?.vwap) {
-      const vwapSeries = chart.addSeries(LineSeries, {
+    // Add VWAP line if series available
+    if (indicators?.vwapSeries && indicators.vwapSeries.length > 0) {
+      const vwapLineSeries = chart.addSeries(LineSeries, {
         color: '#9c27b0',
         lineWidth: 2,
         title: 'VWAP',
       });
-      
-      const vwapData = candles.map((candle) => ({
-        time: candle.timestamp / 1000,
-        value: indicators.vwap!,
+
+      const vwapData = indicators.vwapSeries.map((point) => ({
+        time: (point.timestamp / 1000) as Time,
+        value: point.value,
       }));
-      
-      vwapSeries.setData(vwapData);
+
+      vwapLineSeries.setData(vwapData);
     }
 
     // Add volume
@@ -108,11 +117,11 @@ export function ChartPanel({ candles, indicators }: ChartPanelProps) {
       },
     });
 
-    const volumeData = candles.map((candle, index) => {
-      const prevClose = index > 0 ? candles[index - 1].close : candle.open;
+    const volumeData = uniqueCandles.map((candle, index) => {
+      const prevClose = index > 0 ? uniqueCandles[index - 1].close : candle.open;
       const isUp = candle.close >= prevClose;
       return {
-        time: candle.timestamp / 1000,
+        time: (candle.timestamp / 1000) as Time,
         value: candle.volume,
         color: isUp ? '#26a69a' : '#ef5350',
       };

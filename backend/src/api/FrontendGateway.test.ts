@@ -52,8 +52,8 @@ describe('FrontendGateway', () => {
     const indicatorsData: IndicatorsUpdatedEvent = {
       symbol: 'BTC/USDT',
       indicators: {
-        ema: { value: 65000, period: 200 },
-        vwap: { value: 65100, period: 14 },
+        ema: { value: 65000, series: [], period: 200 },
+        vwap: { value: 65100, series: [], period: 14 },
         rsi: { value: 55, signal: 'neutral', period: 14 },
         macd: { macd: 100, signal: 80, histogram: 20, crossovers: [] },
         atr: { value: 150, period: 14 },
