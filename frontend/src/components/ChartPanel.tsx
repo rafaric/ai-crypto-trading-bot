@@ -91,12 +91,16 @@ export function ChartPanel({ candles, indicators }: ChartPanelProps) {
       );
       uniqueEmaSeries.sort((a, b) => a.timestamp - b.timestamp);
 
-      const emaData = uniqueEmaSeries.map((point) => ({
-        time: (point.timestamp / 1000) as Time,
-        value: point.value,
-      }));
+      const emaData = uniqueEmaSeries
+        .filter((point) => point.value !== null && point.value !== undefined)
+        .map((point) => ({
+          time: (point.timestamp / 1000) as Time,
+          value: point.value as number,
+        }));
 
-      emaLineSeries.setData(emaData);
+      if (emaData.length > 0) {
+        emaLineSeries.setData(emaData);
+      }
     }
 
     // Add VWAP line if series available
@@ -113,12 +117,16 @@ export function ChartPanel({ candles, indicators }: ChartPanelProps) {
       );
       uniqueVwapSeries.sort((a, b) => a.timestamp - b.timestamp);
 
-      const vwapData = uniqueVwapSeries.map((point) => ({
-        time: (point.timestamp / 1000) as Time,
-        value: point.value,
-      }));
+      const vwapData = uniqueVwapSeries
+        .filter((point) => point.value !== null && point.value !== undefined)
+        .map((point) => ({
+          time: (point.timestamp / 1000) as Time,
+          value: point.value as number,
+        }));
 
-      vwapLineSeries.setData(vwapData);
+      if (vwapData.length > 0) {
+        vwapLineSeries.setData(vwapData);
+      }
     }
 
     // Add volume
