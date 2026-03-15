@@ -21,10 +21,18 @@ export interface IndicatorsUpdate {
   timestamp: number;
 }
 
+export interface MarketRegime {
+  regime: 'TRENDING_UP' | 'TRENDING_DOWN' | 'RANGING';
+  trendDirection: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+  confidence: number;
+  timestamp: number;
+}
+
 export function useMarketData() {
   const [ticks, setTicks] = useState<MarketTick[]>([]);
   const [signals, setSignals] = useState<SignalGenerated[]>([]);
   const [indicators, setIndicators] = useState<IndicatorsUpdate | null>(null);
+  const [marketRegime, setMarketRegime] = useState<MarketRegime | null>(null);
   const [connected, setConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -133,6 +141,11 @@ export function useMarketData() {
             case 'SignalGenerated':
               setSignals((prev) => [...prev, message.payload]);
               break;
+
+            case 'market_regime_changed':
+              console.log('📊 Market regime updated:', message.payload);
+              setMarketRegime(message.payload);
+              break;
           }
         } catch (e) {
           console.error('Failed to parse websocket message:', e);
@@ -163,5 +176,5 @@ export function useMarketData() {
     };
   }, []);
 
-  return { ticks, signals, indicators, connected };
+  return { ticks, signals, indicators, marketRegime, connected };
 }

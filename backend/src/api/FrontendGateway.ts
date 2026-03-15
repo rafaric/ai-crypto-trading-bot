@@ -2,6 +2,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { EventBus } from '../core/EventBus';
 import { Candle, SignalGenerated } from '../../../shared/src/events';
 import { IndicatorsUpdatedEvent } from '../engine/IndicatorEngine';
+import { MarketRegimeEvent } from '../engine/MarketRegimeDetector';
 
 export class FrontendGateway {
   private wss: WebSocketServer;
@@ -9,9 +10,11 @@ export class FrontendGateway {
   private unsubscribeCandle: (() => void) | null = null;
   private unsubscribeIndicators: (() => void) | null = null;
   private unsubscribeSignal: (() => void) | null = null;
+  private unsubscribeRegime: (() => void) | null = null;
   private candlesCache: Candle[] = [];
   private readonly MAX_CACHED_CANDLES = 200;
   private latestIndicators: IndicatorsUpdatedEvent | null = null;
+  private latestRegime: MarketRegimeEvent | null = null;
 
   constructor(private eventBus: EventBus, port: number = 8081) {
     this.wss = new WebSocketServer({ port });
@@ -38,6 +41,11 @@ export class FrontendGateway {
       // Send latest indicators state if available
       if (this.latestIndicators) {
         ws.send(JSON.stringify({ type: 'indicators_updated', payload: this.latestIndicators }));
+      }
+
+      // Send latest market regime if available
+      if (this.latestRegime) {
+        ws.send(JSON.stringify({ type: 'market_regime_changed', payload: this.latestRegime }));
       }
 
       // Heartbeat to detect dead connections
@@ -92,6 +100,11 @@ export class FrontendGateway {
     this.unsubscribeSignal = this.eventBus.subscribe<SignalGenerated>('SignalGenerated', (payload) => {
       this.broadcast('SignalGenerated', payload);
     });
+
+    this.unsubscribeRegime = this.eventBus.subscribe<MarketRegimeEvent>('market_regime_changed', (payload) => {
+      this.latestRegime = payload;
+      this.broadcast('market_regime_changed', payload);
+    });
   }
 
   private broadcast(type: string, payload: any) {
@@ -105,8 +118,8 @@ export class FrontendGateway {
       }
     }
 
-    // Always log candle and signal broadcasts for debugging
-    if (type === 'candle_closed' || type === 'SignalGenerated') {
+    // Always log candle, signal, and regime broadcasts for debugging
+    if (type === 'candle_closed' || type === 'SignalGenerated' || type === 'market_regime_changed') {
       console.log(`📡 Broadcast ${type} to ${sentCount} clients`);
     }
   }
@@ -115,13 +128,14 @@ export class FrontendGateway {
     if (this.unsubscribeCandle) this.unsubscribeCandle();
     if (this.unsubscribeIndicators) this.unsubscribeIndicators();
     if (this.unsubscribeSignal) this.unsubscribeSignal();
-    
+    if (this.unsubscribeRegime) this.unsubscribeRegime();
+
     // Close all client connections
     for (const client of this.clients) {
       client.close();
     }
     this.clients.clear();
-    
+
     this.wss.close();
   }
 

@@ -1,9 +1,10 @@
 import { ChartPanel } from './components/ChartPanel';
 import { SignalsPanel } from './components/SignalsPanel';
+import { MarketRegimePanel } from './components/MarketRegimePanel';
 import { useMarketData } from './hooks/useMarketData';
 
 function App() {
-  const { ticks, signals, indicators, connected } = useMarketData();
+  const { ticks, signals, indicators, marketRegime, connected } = useMarketData();
 
   return (
     <div className="min-h-screen bg-gray-100 p-8 text-gray-800 font-sans">
@@ -113,8 +114,9 @@ function App() {
         </div>
         
         <div className="space-y-6">
+          <MarketRegimePanel regime={marketRegime} />
           <SignalsPanel signals={signals} />
-          
+
           {/* Stats */}
           <div className="bg-white rounded-lg shadow p-6">
             <h3 className="text-lg font-semibold mb-3">Session Stats</h3>

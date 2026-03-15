@@ -93,6 +93,7 @@ describe('BinanceRestClient', () => {
         volume: 1.5,
         isClosed: true,
         interval: '1m',
+        isHistorical: true,
       });
       expect(candles[1]).toEqual({
         symbol: 'BTCUSDT',
@@ -104,6 +105,7 @@ describe('BinanceRestClient', () => {
         volume: 2.0,
         isClosed: true,
         interval: '1m',
+        isHistorical: true,
       });
 
       global.fetch = originalFetch;

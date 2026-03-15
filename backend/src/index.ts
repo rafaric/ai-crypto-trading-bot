@@ -6,6 +6,7 @@ config({ path: resolve(__dirname, '../.env') });
 import { EventBus } from './core/EventBus';
 import { FrontendGateway } from './api/FrontendGateway';
 import { IndicatorEngine } from './engine/IndicatorEngine';
+import { MarketRegimeDetector, MarketRegimeEvent } from './engine/MarketRegimeDetector';
 import { PaperTradingEngine } from './execution/PaperTradingEngine';
 import { ITradeRepository, Trade } from './infrastructure/db/ITradeRepository';
 import { SignalGenerated, Candle } from '../../shared/src/events';
@@ -36,6 +37,10 @@ const frontendGateway = new FrontendGateway(eventBus, 8081);
 // Initialize IndicatorEngine (the brain)
 const indicatorEngine = new IndicatorEngine(eventBus);
 console.log('✅ IndicatorEngine initialized - calculating EMA, VWAP, RSI, MACD, ATR, Patterns');
+
+// Initialize MarketRegimeDetector (Multi-Timeframe Analysis)
+const regimeDetector = new MarketRegimeDetector(eventBus);
+console.log('✅ MarketRegimeDetector initialized - analyzing 1H trend with EMA200 + ADX');
 
 // Initialize PaperTradingEngine (simulated execution)
 const tradeRepository = new InMemoryTradeRepository();
@@ -82,9 +87,19 @@ eventBus.subscribe<SignalGenerated>('SignalGenerated', async (signal) => {
   console.log(`   Strategy: ${signal.strategy || 'Unknown'}`);
   console.log(`   Confidence: ${(signal.confidence * 100).toFixed(1)}%`);
   console.log(`   Time: ${new Date(signal.timestamp).toLocaleTimeString()}`);
-  
+
   // Send Telegram notification
   await telegramService.sendSignalAlert(signal);
+});
+
+// Subscribe to market regime changes for logging
+eventBus.subscribe<MarketRegimeEvent>('market_regime_changed', (regime) => {
+  const regimeEmoji = regime.regime === 'TRENDING_UP' ? '📈' :
+                      regime.regime === 'TRENDING_DOWN' ? '📉' : '➡️';
+  console.log(`\n${regimeEmoji} MARKET REGIME CHANGE`);
+  console.log(`   Regime: ${regime.regime}`);
+  console.log(`   Direction: ${regime.trendDirection}`);
+  console.log(`   Confidence: ${(regime.confidence * 100).toFixed(1)}%`);
 });
 
 // Track recent trades to prevent spam
@@ -173,6 +188,7 @@ bootstrap();
 process.on('SIGINT', () => {
   console.log('\n\n🛑 Shutting down gracefully...');
   indicatorEngine.unsubscribe();
+  regimeDetector.unsubscribe();
   frontendGateway.close();
   if (binanceClient) {
     binanceClient.close();

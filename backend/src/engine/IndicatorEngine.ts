@@ -6,6 +6,7 @@ import { RSI } from '../indicators/RSI';
 import { MACD, MACDResult } from '../indicators/MACD';
 import { ATR } from '../indicators/ATR';
 import { CandlestickPatterns } from '../indicators/CandlestickPatterns';
+import { MarketRegimeEvent } from './MarketRegimeDetector';
 
 import type { IndicatorSeries } from '../../../shared/src/events';
 
@@ -78,21 +79,46 @@ export class IndicatorEngine {
   private recentSignals: Map<string, number> = new Map();
   private readonly SIGNAL_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
 
+  // Market regime state
+  private currentRegime: MarketRegimeEvent | null = null;
+  private regimeUnsubscribeFn: (() => void) | null = null;
+
   constructor(eventBus: EventBus) {
     this.eventBus = eventBus;
-    
+
     // Initialize indicators with default periods
     this.ema = new EMA(200);
     this.vwap = new VWAP(14);
     this.rsi = new RSI(14);
     this.macd = new MACD(12, 26, 9);
     this.atr = new ATR(14);
-    
+
     // Subscribe to candle_closed event
     this.unsubscribeFn = this.eventBus.subscribe<Candle>(
       'candle_closed',
       this.handleCandleClosed.bind(this)
     );
+
+    // Subscribe to market_regime_changed event
+    this.regimeUnsubscribeFn = this.eventBus.subscribe<MarketRegimeEvent>(
+      'market_regime_changed',
+      this.handleRegimeChanged.bind(this)
+    );
+  }
+
+  /**
+   * Handle market regime changes
+   */
+  private handleRegimeChanged(regime: MarketRegimeEvent): void {
+    this.currentRegime = regime;
+    console.log(`📊 IndicatorEngine: Market regime updated - ${regime.regime} (${regime.trendDirection})`);
+  }
+
+  /**
+   * Get current market regime
+   */
+  public getCurrentRegime(): MarketRegimeEvent | null {
+    return this.currentRegime;
   }
 
   /**
@@ -102,6 +128,10 @@ export class IndicatorEngine {
     if (this.unsubscribeFn) {
       this.unsubscribeFn();
       this.unsubscribeFn = null;
+    }
+    if (this.regimeUnsubscribeFn) {
+      this.regimeUnsubscribeFn();
+      this.regimeUnsubscribeFn = null;
     }
   }
 
@@ -291,31 +321,55 @@ export class IndicatorEngine {
 
   /**
    * Check for trading signals based on patterns and indicators
+   * Filters signals according to market regime (Multi-Timeframe Analysis)
    */
-  private checkForSignals(indicators: IndicatorValues): { 
-    signal: 'bullish' | 'bearish'; 
-    pattern: string; 
+  private checkForSignals(indicators: IndicatorValues): {
+    signal: 'bullish' | 'bearish';
+    pattern: string;
     confidence: number;
   } | null {
     // Check for recent patterns from candlestick scanner
     const patterns = indicators.candlestick.patterns;
-    
+
     if (patterns.length === 0) {
       return null;
     }
 
     // Get the most recent pattern
     const recentPattern = patterns[patterns.length - 1];
-    
+
     // Only return signals for high-confidence patterns
     if (recentPattern.confidence >= 0.5) {
-      if (recentPattern.type === 'bullish') {
+      const isBullish = recentPattern.type === 'bullish';
+      const isBearish = recentPattern.type === 'bearish';
+
+      // Apply Market Regime Filter (MTF Strategy)
+      if (this.currentRegime) {
+        if (this.currentRegime.regime === 'RANGING') {
+          console.log(`🚫 Signal filtered - market ranging (${recentPattern.pattern})`);
+          return null;
+        }
+
+        if (isBullish && this.currentRegime.regime !== 'TRENDING_UP') {
+          console.log(`🚫 BUY signal filtered - not aligned with trend (regime: ${this.currentRegime.regime})`);
+          return null;
+        }
+
+        if (isBearish && this.currentRegime.regime !== 'TRENDING_DOWN') {
+          console.log(`🚫 SELL signal filtered - not aligned with trend (regime: ${this.currentRegime.regime})`);
+          return null;
+        }
+
+        console.log(`✅ Signal aligned with trend (${this.currentRegime.regime}): ${recentPattern.pattern}`);
+      }
+
+      if (isBullish) {
         return {
           signal: 'bullish',
           pattern: recentPattern.pattern,
           confidence: recentPattern.confidence,
         };
-      } else if (recentPattern.type === 'bearish') {
+      } else if (isBearish) {
         return {
           signal: 'bearish',
           pattern: recentPattern.pattern,

@@ -72,6 +72,14 @@ jest.mock('../indicators/CandlestickPatterns', () => ({
   },
 }));
 
+// Mock MarketRegimeDetector
+jest.mock('./MarketRegimeDetector', () => ({
+  MarketRegimeDetector: jest.fn().mockImplementation(() => ({
+    getCurrentRegime: jest.fn().mockReturnValue(null),
+    unsubscribe: jest.fn(),
+  })),
+}));
+
 describe('IndicatorEngine', () => {
   let eventBus: EventBus;
   let engine: IndicatorEngine;
@@ -408,7 +416,7 @@ describe('IndicatorEngine', () => {
       const lastCall = publishSpy.mock.calls[publishSpy.mock.calls.length - 1];
       
       if (lastCall[0] === 'indicators_updated') {
-        expect(lastCall[1].indicators).toHaveProperty('ema');
+        expect((lastCall[1] as any).indicators).toHaveProperty('ema');
       }
     });
 
@@ -430,7 +438,7 @@ describe('IndicatorEngine', () => {
       const lastCall = publishSpy.mock.calls[publishSpy.mock.calls.length - 1];
       
       if (lastCall[0] === 'indicators_updated') {
-        expect(lastCall[1].indicators).toHaveProperty('vwap');
+        expect((lastCall[1] as any).indicators).toHaveProperty('vwap');
       }
     });
 
@@ -453,7 +461,7 @@ describe('IndicatorEngine', () => {
       const lastCall = publishSpy.mock.calls[publishSpy.mock.calls.length - 1];
       
       if (lastCall[0] === 'indicators_updated') {
-        expect(lastCall[1].indicators).toHaveProperty('rsi');
+        expect((lastCall[1] as any).indicators).toHaveProperty('rsi');
       }
     });
 
@@ -476,7 +484,7 @@ describe('IndicatorEngine', () => {
       const lastCall = publishSpy.mock.calls[publishSpy.mock.calls.length - 1];
       
       if (lastCall[0] === 'indicators_updated') {
-        expect(lastCall[1].indicators).toHaveProperty('macd');
+        expect((lastCall[1] as any).indicators).toHaveProperty('macd');
       }
     });
 
@@ -499,7 +507,7 @@ describe('IndicatorEngine', () => {
       const lastCall = publishSpy.mock.calls[publishSpy.mock.calls.length - 1];
       
       if (lastCall[0] === 'indicators_updated') {
-        expect(lastCall[1].indicators).toHaveProperty('atr');
+        expect((lastCall[1] as any).indicators).toHaveProperty('atr');
       }
     });
 
@@ -521,7 +529,7 @@ describe('IndicatorEngine', () => {
       const lastCall = publishSpy.mock.calls[publishSpy.mock.calls.length - 1];
       
       if (lastCall[0] === 'indicators_updated') {
-        expect(lastCall[1].indicators).toHaveProperty('candlestick');
+        expect((lastCall[1] as any).indicators).toHaveProperty('candlestick');
       }
     });
   });
@@ -549,6 +557,235 @@ describe('IndicatorEngine', () => {
       );
       
       expect(indicatorsCall).toBeDefined();
+    });
+  });
+
+  describe('Market Regime Signal Filtering', () => {
+    it('should emit BUY signal when regime is TRENDING_UP', () => {
+      // Set regime to TRENDING_UP
+      eventBus.publish('market_regime_changed', {
+        regime: 'TRENDING_UP',
+        trendDirection: 'BULLISH',
+        confidence: 0.8,
+        timestamp: Date.now(),
+      });
+
+      // Mock bullish pattern
+      const { CandlestickPatterns } = require('../indicators/CandlestickPatterns');
+      CandlestickPatterns.scan.mockReturnValueOnce([
+        {
+          pattern: 'Bullish Engulfing',
+          type: 'bullish',
+          confidence: 0.85,
+          timestamp: Date.now(),
+          index: 10,
+        },
+      ]);
+
+      const publishSpy = jest.spyOn(eventBus, 'publish');
+      
+      // Add enough data
+      for (let i = 0; i < 50; i++) {
+        eventBus.publish('candle_closed', {
+          symbol: 'BTC/USDT',
+          open: 50000,
+          high: 50500,
+          low: 49500,
+          close: 50200,
+          timestamp: Date.now() - (50 - i) * 60000,
+          volume: 1000,
+        });
+      }
+
+      const signalCalls = publishSpy.mock.calls.filter(
+        call => call[0] === 'SignalGenerated'
+      );
+      
+      // Should emit BUY signal
+      expect(signalCalls.length).toBeGreaterThan(0);
+      const lastSignal = signalCalls[signalCalls.length - 1][1] as { action: string };
+      expect(lastSignal.action).toBe('BUY');
+    });
+
+    it('should filter BUY signal when regime is TRENDING_DOWN', () => {
+      // Set regime to TRENDING_DOWN
+      eventBus.publish('market_regime_changed', {
+        regime: 'TRENDING_DOWN',
+        trendDirection: 'BEARISH',
+        confidence: 0.8,
+        timestamp: Date.now(),
+      });
+
+      // Mock bullish pattern (should be filtered)
+      const { CandlestickPatterns } = require('../indicators/CandlestickPatterns');
+      CandlestickPatterns.scan.mockReturnValueOnce([
+        {
+          pattern: 'Bullish Engulfing',
+          type: 'bullish',
+          confidence: 0.85,
+          timestamp: Date.now(),
+          index: 10,
+        },
+      ]);
+
+      const publishSpy = jest.spyOn(eventBus, 'publish');
+      publishSpy.mockClear();
+      
+      // Add enough data
+      for (let i = 0; i < 50; i++) {
+        eventBus.publish('candle_closed', {
+          symbol: 'BTC/USDT',
+          open: 50000,
+          high: 50500,
+          low: 49500,
+          close: 50200,
+          timestamp: Date.now() - (50 - i) * 60000,
+          volume: 1000,
+        });
+      }
+
+      const signalCalls = publishSpy.mock.calls.filter(
+        call => call[0] === 'SignalGenerated'
+      );
+      
+      // Should NOT emit BUY signal in downtrend
+      expect(signalCalls.length).toBe(0);
+    });
+
+    it('should filter signals when regime is RANGING', () => {
+      // Set regime to RANGING
+      eventBus.publish('market_regime_changed', {
+        regime: 'RANGING',
+        trendDirection: 'NEUTRAL',
+        confidence: 0.7,
+        timestamp: Date.now(),
+      });
+
+      // Mock bullish pattern (should be filtered)
+      const { CandlestickPatterns } = require('../indicators/CandlestickPatterns');
+      CandlestickPatterns.scan.mockReturnValueOnce([
+        {
+          pattern: 'Bullish Engulfing',
+          type: 'bullish',
+          confidence: 0.85,
+          timestamp: Date.now(),
+          index: 10,
+        },
+      ]);
+
+      const publishSpy = jest.spyOn(eventBus, 'publish');
+      publishSpy.mockClear();
+      
+      // Add enough data
+      for (let i = 0; i < 50; i++) {
+        eventBus.publish('candle_closed', {
+          symbol: 'BTC/USDT',
+          open: 50000,
+          high: 50500,
+          low: 49500,
+          close: 50200,
+          timestamp: Date.now() - (50 - i) * 60000,
+          volume: 1000,
+        });
+      }
+
+      const signalCalls = publishSpy.mock.calls.filter(
+        call => call[0] === 'SignalGenerated'
+      );
+      
+      // Should NOT emit signals in ranging market
+      expect(signalCalls.length).toBe(0);
+    });
+
+    it('should emit SELL signal when regime is TRENDING_DOWN', () => {
+      // Set regime to TRENDING_DOWN
+      eventBus.publish('market_regime_changed', {
+        regime: 'TRENDING_DOWN',
+        trendDirection: 'BEARISH',
+        confidence: 0.8,
+        timestamp: Date.now(),
+      });
+
+      // Mock bearish pattern
+      const { CandlestickPatterns } = require('../indicators/CandlestickPatterns');
+      CandlestickPatterns.scan.mockReturnValueOnce([
+        {
+          pattern: 'Bearish Engulfing',
+          type: 'bearish',
+          confidence: 0.85,
+          timestamp: Date.now(),
+          index: 10,
+        },
+      ]);
+
+      const publishSpy = jest.spyOn(eventBus, 'publish');
+      
+      // Add enough data
+      for (let i = 0; i < 50; i++) {
+        eventBus.publish('candle_closed', {
+          symbol: 'BTC/USDT',
+          open: 50000,
+          high: 50500,
+          low: 49500,
+          close: 49800,
+          timestamp: Date.now() - (50 - i) * 60000,
+          volume: 1000,
+        });
+      }
+
+      const signalCalls = publishSpy.mock.calls.filter(
+        call => call[0] === 'SignalGenerated'
+      );
+      
+      // Should emit SELL signal
+      expect(signalCalls.length).toBeGreaterThan(0);
+      const lastSignal = signalCalls[signalCalls.length - 1][1] as { action: string };
+      expect(lastSignal.action).toBe('SELL');
+    });
+
+    it('should filter SELL signal when regime is TRENDING_UP', () => {
+      // Set regime to TRENDING_UP
+      eventBus.publish('market_regime_changed', {
+        regime: 'TRENDING_UP',
+        trendDirection: 'BULLISH',
+        confidence: 0.8,
+        timestamp: Date.now(),
+      });
+
+      // Mock bearish pattern (should be filtered)
+      const { CandlestickPatterns } = require('../indicators/CandlestickPatterns');
+      CandlestickPatterns.scan.mockReturnValueOnce([
+        {
+          pattern: 'Bearish Engulfing',
+          type: 'bearish',
+          confidence: 0.85,
+          timestamp: Date.now(),
+          index: 10,
+        },
+      ]);
+
+      const publishSpy = jest.spyOn(eventBus, 'publish');
+      publishSpy.mockClear();
+      
+      // Add enough data
+      for (let i = 0; i < 50; i++) {
+        eventBus.publish('candle_closed', {
+          symbol: 'BTC/USDT',
+          open: 50000,
+          high: 50500,
+          low: 49500,
+          close: 49800,
+          timestamp: Date.now() - (50 - i) * 60000,
+          volume: 1000,
+        });
+      }
+
+      const signalCalls = publishSpy.mock.calls.filter(
+        call => call[0] === 'SignalGenerated'
+      );
+      
+      // Should NOT emit SELL signal in uptrend
+      expect(signalCalls.length).toBe(0);
     });
   });
 });
