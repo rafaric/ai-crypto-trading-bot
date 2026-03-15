@@ -144,12 +144,15 @@ export class MarketRegimeDetector {
     // Calculate EMA20
     const emaValues = this.ema.calculate(candlesForIndicators);
     const currentEMA = emaValues[emaValues.length - 1];
+    console.log(`📊 EMA calculation: ${emaValues.length} values, currentEMA=${currentEMA}`);
 
     // Calculate ADX
     const adxValues = this.adx.calculate(candlesForIndicators);
     const currentADX = adxValues[adxValues.length - 1];
+    console.log(`📊 ADX calculation: ${adxValues.length} values, currentADX=${currentADX}`);
 
     if (currentEMA === null || currentADX === null) {
+      console.log(`⚠️ Cannot calculate regime - EMA=${currentEMA}, ADX=${currentADX}`);
       return;
     }
 
