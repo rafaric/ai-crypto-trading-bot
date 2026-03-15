@@ -123,7 +123,10 @@ export class MarketRegimeDetector {
    */
   private calculateAndEmitRegime(): void {
     // Need at least 20 fifteen-minute candles for EMA20
+    console.log(`📊 MarketRegimeDetector: ${this.fifteenMinuteCandles.length}/20 fifteen-minute candles`);
+    
     if (this.fifteenMinuteCandles.length < 20) {
+      console.log(`⏳ Waiting for more 15m candles: ${this.fifteenMinuteCandles.length}/20`);
       return;
     }
 
@@ -191,10 +194,12 @@ export class MarketRegimeDetector {
     };
 
     // Only emit if regime changed
-    if (this.shouldEmitRegimeChange(newRegime)) {
+    if (this.currentRegime?.regime !== newRegime.regime) {
       this.currentRegime = newRegime;
+      console.log(`🎯 Market regime changed: ${newRegime.regime} (${newRegime.trendDirection}) - Confidence: ${(newRegime.confidence * 100).toFixed(1)}%`);
       this.eventBus.publish<MarketRegimeEvent>('market_regime_changed', newRegime);
-      console.log(`📊 Market Regime Changed: ${regime} (${trendDirection}) - Confidence: ${(confidence * 100).toFixed(1)}%`);
+    } else {
+      console.log(`📊 Regime stable: ${newRegime.regime} (${newRegime.trendDirection})`);
     }
   }
 
