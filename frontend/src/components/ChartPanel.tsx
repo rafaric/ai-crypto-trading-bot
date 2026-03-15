@@ -2,8 +2,10 @@ import { useEffect, useRef } from 'react';
 import { createChart, CandlestickSeries, LineSeries, HistogramSeries } from 'lightweight-charts';
 import type { Time } from 'lightweight-charts';
 import type { Candle, IndicatorSeries } from '../../../shared/src/events';
+import type { TradingPair } from '../hooks/useMarketData';
 
 interface ChartPanelProps {
+  selectedPair: TradingPair;
   candles: Candle[];
   indicators?: {
     ema?: number | null;
@@ -13,11 +15,12 @@ interface ChartPanelProps {
   };
 }
 
-export function ChartPanel({ candles, indicators }: ChartPanelProps) {
+export function ChartPanel({ selectedPair, candles, indicators }: ChartPanelProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     console.log('🎨 ChartPanel received:', {
+      pair: selectedPair,
       candles: candles.length,
       emaSeries: indicators?.emaSeries?.length,
       vwapSeries: indicators?.vwapSeries?.length,
@@ -177,14 +180,18 @@ export function ChartPanel({ candles, indicators }: ChartPanelProps) {
       window.removeEventListener('resize', handleResize);
       chart.remove();
     };
-  }, [candles, indicators]);
+  }, [candles, indicators, selectedPair]);
+
+  const formatPairName = (pair: TradingPair) => {
+    return pair.replace('USDT', '/USDT');
+  };
 
   return (
     <div className="bg-white rounded-lg shadow p-4">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
         <div className="flex items-center gap-2">
-          <h2 className="text-lg font-semibold">BTC/USDT Chart</h2>
-          <span className="text-xs bg-gray-200 px-2 py-1 rounded">5m</span>
+          <h2 className="text-lg font-semibold">{formatPairName(selectedPair)} Chart</h2>
+          <span className="text-xs bg-slate-200 px-2 py-1 rounded">5m</span>
         </div>
         <div className="flex gap-4 text-sm">
           {indicators?.ema && (
@@ -201,9 +208,9 @@ export function ChartPanel({ candles, indicators }: ChartPanelProps) {
           )}
         </div>
       </div>
-      <div ref={chartContainerRef} className="w-full" />
+      <div ref={chartContainerRef} className="w-full" data-testid="chart-container" />
       {candles.length === 0 && (
-        <div className="flex items-center justify-center h-64 text-gray-500">
+        <div className="flex items-center justify-center h-64 text-slate-500">
           Waiting for candle data...
         </div>
       )}

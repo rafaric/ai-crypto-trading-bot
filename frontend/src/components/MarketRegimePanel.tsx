@@ -1,16 +1,21 @@
-import React from 'react';
 import type { MarketRegime } from '../hooks/useMarketData';
+import type { TradingPair } from '../hooks/useMarketData';
 
 interface MarketRegimePanelProps {
+  selectedPair: TradingPair;
   regime: MarketRegime | null;
 }
 
-export const MarketRegimePanel: React.FC<MarketRegimePanelProps> = ({ regime }) => {
+export function MarketRegimePanel({ selectedPair, regime }: MarketRegimePanelProps) {
   if (!regime) {
     return (
-      <div className="market-regime-panel" style={styles.container}>
-        <h3 style={styles.title}>Market Regime</h3>
-        <div style={styles.loading}>Analyzing market conditions...</div>
+      <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
+        <h3 className="text-base font-bold text-slate-100 mb-3">
+          {selectedPair.replace('USDT', '/USDT')} - 1H Trend Analysis
+        </h3>
+        <div className="text-slate-400 text-sm italic">
+          Analyzing market conditions...
+        </div>
       </div>
     );
   }
@@ -86,97 +91,36 @@ export const MarketRegimePanel: React.FC<MarketRegimePanelProps> = ({ regime }) 
   const regimeStyles = getRegimeStyles();
 
   return (
-    <div style={styles.container}>
-      <h3 style={styles.title}>1H Trend Analysis</h3>
+    <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
+      <h3 className="text-base font-bold text-slate-100 mb-3">
+        {selectedPair.replace('USDT', '/USDT')} - 1H Trend Analysis
+      </h3>
       <div
+        className="p-4 rounded-lg border-2 text-center"
         style={{
-          ...styles.regimeCard,
           backgroundColor: regimeStyles.backgroundColor,
           borderColor: regimeStyles.borderColor,
         }}
       >
-        <div style={styles.regimeHeader}>
-          <span style={styles.emoji}>{getRegimeEmoji()}</span>
-          <span style={styles.regimeName}>{regime.regime.replace('_', ' ')}</span>
+        <div className="flex items-center justify-center gap-2 mb-2">
+          <span className="text-2xl">{getRegimeEmoji()}</span>
+          <span className="text-lg font-bold text-white">
+            {regime.regime.replace('_', ' ')}
+          </span>
         </div>
-        <div style={styles.trendLabel}>{getTrendLabel()}</div>
-        <div style={styles.confidence}>
+        <div className="text-sm text-white/90 mb-1">{getTrendLabel()}</div>
+        <div className="text-xs text-white/80 mb-3">
           Confidence: {(regime.confidence * 100).toFixed(0)}%
         </div>
-        <div style={styles.instruction}>{getSignalInstruction()}</div>
+        <div className="inline-block text-xs font-bold text-white px-2 py-1 rounded bg-black/20">
+          {getSignalInstruction()}
+        </div>
       </div>
-      <div style={styles.explanation}>
-        <small>
-          Based on 1H timeframe: EMA 200 + ADX
-          <br />
-          Signals filtered to trade only with the trend
-        </small>
+      <div className="mt-3 text-xs text-slate-400 leading-relaxed">
+        Based on 1H timeframe: EMA 200 + ADX
+        <br />
+        Signals filtered to trade only with the trend
       </div>
     </div>
   );
-};
-
-const styles: { [key: string]: React.CSSProperties } = {
-  container: {
-    padding: '16px',
-    backgroundColor: '#1f2937',
-    borderRadius: '8px',
-    border: '1px solid #374151',
-  },
-  title: {
-    margin: '0 0 12px 0',
-    fontSize: '16px',
-    fontWeight: 'bold',
-    color: '#f3f4f6',
-  },
-  loading: {
-    color: '#9ca3af',
-    fontStyle: 'italic',
-  },
-  regimeCard: {
-    padding: '16px',
-    borderRadius: '8px',
-    border: '2px solid',
-    textAlign: 'center',
-  },
-  regimeHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '8px',
-    marginBottom: '8px',
-  },
-  emoji: {
-    fontSize: '24px',
-  },
-  regimeName: {
-    fontSize: '18px',
-    fontWeight: 'bold',
-    color: 'white',
-  },
-  trendLabel: {
-    fontSize: '14px',
-    color: 'rgba(255, 255, 255, 0.9)',
-    marginBottom: '4px',
-  },
-  confidence: {
-    fontSize: '12px',
-    color: 'rgba(255, 255, 255, 0.8)',
-    marginBottom: '8px',
-  },
-  instruction: {
-    fontSize: '12px',
-    fontWeight: 'bold',
-    color: 'white',
-    padding: '4px 8px',
-    backgroundColor: 'rgba(0, 0, 0, 0.2)',
-    borderRadius: '4px',
-    display: 'inline-block',
-  },
-  explanation: {
-    marginTop: '12px',
-    color: '#9ca3af',
-    fontSize: '11px',
-    lineHeight: '1.4',
-  },
-};
+}

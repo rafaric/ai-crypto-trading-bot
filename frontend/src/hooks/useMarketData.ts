@@ -1,5 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
-import type { MarketTick, SignalGenerated } from '../../../shared/src/events';
+import type { Candle, SignalGenerated } from '../../../shared/src/events';
+
+export const TRADING_PAIRS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT'] as const;
+export type TradingPair = (typeof TRADING_PAIRS)[number];
 
 export interface IndicatorSeries {
   timestamp: number;
@@ -22,22 +25,69 @@ export interface IndicatorsUpdate {
 }
 
 export interface MarketRegime {
+  symbol: string;
   regime: 'TRENDING_UP' | 'TRENDING_DOWN' | 'RANGING';
   trendDirection: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
   confidence: number;
   timestamp: number;
 }
 
-export function useMarketData() {
-  const [ticks, setTicks] = useState<MarketTick[]>([]);
+export interface PairData {
+  symbol: TradingPair;
+  ticks: Candle[];
+  indicators: IndicatorsUpdate | null;
+  regime: MarketRegime | null;
+  currentPrice: number | null;
+  change24h: number | null;
+}
+
+export interface UseMarketDataReturn {
+  // All pairs data
+  allPairs: Map<string, PairData>;
+  // Currently selected pair
+  selectedPair: TradingPair;
+  setSelectedPair: (pair: TradingPair) => void;
+  // Data for selected pair
+  currentPairData: PairData;
+  // Legacy props for backward compatibility
+  ticks: Candle[];
+  signals: SignalGenerated[];
+  indicators: IndicatorsUpdate | null;
+  marketRegime: MarketRegime | null;
+  connected: boolean;
+  isLoading: boolean;
+}
+
+const MAX_CANDLES_PER_PAIR = 200;
+
+export function useMarketData(): UseMarketDataReturn {
+  const [selectedPair, setSelectedPair] = useState<TradingPair>('BTCUSDT');
+  const [allPairs, setAllPairs] = useState<Map<string, PairData>>(new Map());
   const [signals, setSignals] = useState<SignalGenerated[]>([]);
-  const [indicators, setIndicators] = useState<IndicatorsUpdate | null>(null);
-  const [marketRegime, setMarketRegime] = useState<MarketRegime | null>(null);
   const [connected, setConnected] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const maxReconnectDelay = 30000; // Max 30 seconds
+
+  // Initialize pairs map
+  useEffect(() => {
+    const initialPairs = new Map<string, PairData>();
+    TRADING_PAIRS.forEach((pair) => {
+      initialPairs.set(pair, {
+        symbol: pair,
+        ticks: [],
+        indicators: null,
+        regime: null,
+        currentPrice: null,
+        change24h: null,
+      });
+    });
+    setAllPairs(initialPairs);
+    setIsLoading(false);
+  }, []);
 
   useEffect(() => {
     let isSubscribed = true;
@@ -104,7 +154,6 @@ export function useMarketData() {
 
       ws.onerror = (error) => {
         console.error('WebSocket error:', error);
-        // Don't set connected false here, let onclose handle it
       };
 
       const handleMessage = (event: MessageEvent) => {
@@ -118,34 +167,97 @@ export function useMarketData() {
               // Welcome message received
               break;
 
-            case 'candle_closed':
-              setTicks((prev) => {
-                const updated = [...prev, message.payload];
-                if (updated.length > 200) {
-                  return updated.slice(updated.length - 200);
+            case 'candle_closed': {
+              const candle: Candle = message.payload;
+              const symbol = candle.symbol as TradingPair;
+              
+              setAllPairs((prev) => {
+                const updated = new Map(prev);
+                const pairData = updated.get(symbol);
+                if (pairData) {
+                  const newTicks = [...pairData.ticks, candle];
+                  if (newTicks.length > MAX_CANDLES_PER_PAIR) {
+                    newTicks.shift();
+                  }
+                  updated.set(symbol, {
+                    ...pairData,
+                    ticks: newTicks,
+                    currentPrice: candle.close,
+                  });
                 }
                 return updated;
               });
               break;
+            }
 
-            case 'indicators_updated':
+            case 'indicators_updated': {
+              const indicatorsData: IndicatorsUpdate = message.payload;
+              const symbol = indicatorsData.symbol as TradingPair;
+              
               console.log('📥 Received indicators:', {
-                emaSeries: message.payload.indicators?.ema?.series?.length,
-                vwapSeries: message.payload.indicators?.vwap?.series?.length,
-                emaValue: message.payload.indicators?.ema?.value,
-                vwapValue: message.payload.indicators?.vwap?.value,
+                symbol,
+                emaSeries: indicatorsData.indicators?.ema?.series?.length,
+                vwapSeries: indicatorsData.indicators?.vwap?.series?.length,
               });
-              setIndicators(message.payload);
+              
+              setAllPairs((prev) => {
+                const updated = new Map(prev);
+                const pairData = updated.get(symbol);
+                if (pairData) {
+                  updated.set(symbol, {
+                    ...pairData,
+                    indicators: indicatorsData,
+                  });
+                }
+                return updated;
+              });
               break;
+            }
 
-            case 'SignalGenerated':
-              setSignals((prev) => [...prev, message.payload]);
+            case 'SignalGenerated': {
+              const signal: SignalGenerated = message.payload;
+              setSignals((prev) => [...prev, signal]);
               break;
+            }
 
-            case 'market_regime_changed':
-              console.log('📊 Market regime updated:', message.payload);
-              setMarketRegime(message.payload);
+            case 'market_regime_changed': {
+              const regimeData: MarketRegime = message.payload;
+              const symbol = regimeData.symbol as TradingPair;
+              
+              console.log('📊 Market regime updated:', { symbol, regime: regimeData.regime });
+              
+              setAllPairs((prev) => {
+                const updated = new Map(prev);
+                const pairData = updated.get(symbol);
+                if (pairData) {
+                  updated.set(symbol, {
+                    ...pairData,
+                    regime: regimeData,
+                  });
+                }
+                return updated;
+              });
               break;
+            }
+
+            case 'price_update': {
+              const { symbol, price, change24h } = message.payload;
+              const pairSymbol = symbol as TradingPair;
+              
+              setAllPairs((prev) => {
+                const updated = new Map(prev);
+                const pairData = updated.get(pairSymbol);
+                if (pairData) {
+                  updated.set(pairSymbol, {
+                    ...pairData,
+                    currentPrice: price,
+                    change24h: change24h,
+                  });
+                }
+                return updated;
+              });
+              break;
+            }
           }
         } catch (e) {
           console.error('Failed to parse websocket message:', e);
@@ -176,5 +288,32 @@ export function useMarketData() {
     };
   }, []);
 
-  return { ticks, signals, indicators, marketRegime, connected };
+  // Get current pair data
+  const currentPairData = allPairs.get(selectedPair) || {
+    symbol: selectedPair,
+    ticks: [],
+    indicators: null,
+    regime: null,
+    currentPrice: null,
+    change24h: null,
+  };
+
+  // Filter signals for selected pair
+  const filteredSignals = signals.filter(
+    (signal) => signal.symbol === selectedPair
+  );
+
+  return {
+    allPairs,
+    selectedPair,
+    setSelectedPair,
+    currentPairData,
+    // Legacy props
+    ticks: currentPairData.ticks,
+    signals: filteredSignals,
+    indicators: currentPairData.indicators,
+    marketRegime: currentPairData.regime,
+    connected,
+    isLoading,
+  };
 }
