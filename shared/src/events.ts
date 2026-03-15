@@ -24,5 +24,15 @@ export interface SignalGenerated {
   timestamp: number;
 }
 
+export interface MarketRegime1HUpdated {
+  regime: 'TRENDING_UP' | 'TRENDING_DOWN' | 'RANGING';
+  trendDirection: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+  confidence: number;
+  timestamp: number;
+  ema200: number;
+  adx14: number;
+  price: number;
+}
+
 // Deprecated: Use Candle instead
 export type MarketTick = Candle;

@@ -182,7 +182,10 @@ export function ChartPanel({ candles, indicators }: ChartPanelProps) {
   return (
     <div className="bg-white rounded-lg shadow p-4">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold">BTC/USDT Chart</h2>
+        <div className="flex items-center gap-2">
+          <h2 className="text-lg font-semibold">BTC/USDT Chart</h2>
+          <span className="text-xs bg-gray-200 px-2 py-1 rounded">5m</span>
+        </div>
         <div className="flex gap-4 text-sm">
           {indicators?.ema && (
             <span className="flex items-center gap-1">

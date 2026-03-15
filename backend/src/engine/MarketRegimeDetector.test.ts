@@ -1,298 +1,219 @@
 import { MarketRegimeDetector, MarketRegimeEvent } from './MarketRegimeDetector';
 import { EventBus } from '../core/EventBus';
-import { Candle } from '../../../shared/src/events';
-
-// Mock indicators - simplified for testing regime detection
-jest.mock('../indicators/EMA', () => ({
-  EMA: jest.fn().mockImplementation((period = 20) => ({
-    calculate: jest.fn().mockImplementation((candles: Candle[]) => {
-      // Simple mock: EMA is always 95% of close price
-      // This means price is always above EMA (bullish bias for test)
-      return candles.map((c, i) => i < period - 1 ? null : c.close * 0.95);
-    }),
-    getPeriod: jest.fn().mockReturnValue(period),
-  })),
-}));
-
-jest.mock('../indicators/ADX', () => ({
-  ADX: jest.fn().mockImplementation((period = 14) => ({
-    calculate: jest.fn().mockImplementation((candles: Candle[]) => {
-      // Mock ADX - return high value (30) for trending markets
-      // based on price magnitude (simplified detection)
-      const lastClose = candles[candles.length - 1]?.close || 100;
-      // Price > 105 indicates uptrend in test data, price < 95 indicates downtrend
-      const isTrending = lastClose > 105 || lastClose < 95;
-      const adxValue = isTrending ? 30 : 15;
-      // ADX needs period candles (not period*2-1) to calculate
-      return candles.map((_, i) => i < period - 1 ? null : adxValue);
-    }),
-    getPeriod: jest.fn().mockReturnValue(period),
-  })),
-}));
+import { MarketRegime1HUpdated } from '../../../shared/src/events';
 
 describe('MarketRegimeDetector', () => {
-  let eventBus: EventBus;
   let detector: MarketRegimeDetector;
+  let eventBus: EventBus;
 
   beforeEach(() => {
     eventBus = new EventBus();
     detector = new MarketRegimeDetector(eventBus);
-    jest.clearAllMocks();
   });
 
   afterEach(() => {
     detector.unsubscribe();
   });
 
-  describe('Constructor', () => {
-    it('should subscribe to candle_closed event', () => {
-      const subscribeSpy = jest.spyOn(eventBus, 'subscribe');
-      
-      new MarketRegimeDetector(eventBus);
-      
-      expect(subscribeSpy).toHaveBeenCalledWith('candle_closed', expect.any(Function));
-    });
-
-    it('should store eventBus reference', () => {
+  describe('constructor', () => {
+    it('should create detector with event bus', () => {
       expect(detector).toBeDefined();
+      expect(detector.getCurrentRegime()).toBeNull();
     });
   });
 
-  describe('Candle Aggregation', () => {
-    it('should aggregate 1m candles into 15m candles', () => {
-      const publishSpy = jest.spyOn(eventBus, 'publish');
-      
-      // Publish 15 one-minute candles (15 minutes = 1 candle of 15m)
-      for (let i = 0; i < 15; i++) {
-        const candle: Candle = {
-          symbol: 'BTC/USDT',
-          open: 100 + i,
-          high: 105 + i,
-          low: 95 + i,
-          close: 100 + i,
-          timestamp: Date.now() + i * 60000,
-          volume: 1000,
-        };
-        eventBus.publish('candle_closed', candle);
-      }
+  describe('1H regime event handling', () => {
+    it('should update regime when market_regime_1h_updated event is received', () => {
+      const regimeEvent: MarketRegime1HUpdated = {
+        regime: 'TRENDING_UP',
+        trendDirection: 'BULLISH',
+        confidence: 0.75,
+        timestamp: Date.now(),
+        ema200: 50000,
+        adx14: 30,
+        price: 51000,
+      };
 
-      // Should have processed candles
-      expect(publishSpy).toHaveBeenCalled();
+      eventBus.publish('market_regime_1h_updated', regimeEvent);
+
+      const currentRegime = detector.getCurrentRegime();
+      expect(currentRegime).not.toBeNull();
+      expect(currentRegime?.regime).toBe('TRENDING_UP');
+      expect(currentRegime?.trendDirection).toBe('BULLISH');
+      expect(currentRegime?.confidence).toBe(0.75);
+    });
+
+    it('should emit market_regime_changed when regime changes', () => {
+      const eventHandler = jest.fn();
+      eventBus.subscribe<MarketRegimeEvent>('market_regime_changed', eventHandler);
+
+      // First regime event
+      const regimeEvent1: MarketRegime1HUpdated = {
+        regime: 'TRENDING_UP',
+        trendDirection: 'BULLISH',
+        confidence: 0.75,
+        timestamp: Date.now(),
+        ema200: 50000,
+        adx14: 30,
+        price: 51000,
+      };
+
+      eventBus.publish('market_regime_1h_updated', regimeEvent1);
+
+      expect(eventHandler).toHaveBeenCalledTimes(1);
+      expect(eventHandler.mock.calls[0][0].regime).toBe('TRENDING_UP');
+
+      // Same regime - should not emit again
+      const regimeEvent2: MarketRegime1HUpdated = {
+        regime: 'TRENDING_UP',
+        trendDirection: 'BULLISH',
+        confidence: 0.80, // Different confidence, same regime
+        timestamp: Date.now(),
+        ema200: 50500,
+        adx14: 32,
+        price: 51500,
+      };
+
+      eventBus.publish('market_regime_1h_updated', regimeEvent2);
+
+      // Should not emit again for same regime
+      expect(eventHandler).toHaveBeenCalledTimes(1);
+    });
+
+    it('should emit event when regime changes from UP to DOWN', () => {
+      const eventHandler = jest.fn();
+      eventBus.subscribe<MarketRegimeEvent>('market_regime_changed', eventHandler);
+
+      // First: TRENDING_UP
+      eventBus.publish('market_regime_1h_updated', {
+        regime: 'TRENDING_UP',
+        trendDirection: 'BULLISH',
+        confidence: 0.75,
+        timestamp: Date.now(),
+        ema200: 50000,
+        adx14: 30,
+        price: 51000,
+      });
+
+      expect(eventHandler).toHaveBeenCalledTimes(1);
+
+      // Then: TRENDING_DOWN
+      eventBus.publish('market_regime_1h_updated', {
+        regime: 'TRENDING_DOWN',
+        trendDirection: 'BEARISH',
+        confidence: 0.65,
+        timestamp: Date.now(),
+        ema200: 52000,
+        adx14: 28,
+        price: 51000,
+      });
+
+      expect(eventHandler).toHaveBeenCalledTimes(2);
+      expect(eventHandler.mock.calls[1][0].regime).toBe('TRENDING_DOWN');
+    });
+
+    it('should handle RANGING regime', () => {
+      const eventHandler = jest.fn();
+      eventBus.subscribe<MarketRegimeEvent>('market_regime_changed', eventHandler);
+
+      eventBus.publish('market_regime_1h_updated', {
+        regime: 'RANGING',
+        trendDirection: 'NEUTRAL',
+        confidence: 0.50,
+        timestamp: Date.now(),
+        ema200: 50000,
+        adx14: 15,
+        price: 50050,
+      });
+
+      const currentRegime = detector.getCurrentRegime();
+      expect(currentRegime?.regime).toBe('RANGING');
+      expect(currentRegime?.trendDirection).toBe('NEUTRAL');
     });
   });
 
-  describe('Regime Detection', () => {
-    it('should detect TRENDING_UP when price > EMA20 and ADX > 25', () => {
-      const publishSpy = jest.spyOn(eventBus, 'publish');
-      
-      // Create strong uptrend candles - need 20 candles of 15m = 300 candles of 1m
-      for (let candle15m = 0; candle15m < 25; candle15m++) {
-        // Create 15 candles per 15m period
-        for (let minute = 0; minute < 15; minute++) {
-          const price = 100 + candle15m * 2 + minute * 0.01; // Uptrend
-          const candle: Candle = {
-            symbol: 'BTC/USDT',
-            open: price,
-            high: price + 5,
-            low: price - 2,
-            close: price + 3,
-            timestamp: Date.now() + (candle15m * 15 + minute) * 60000,
-            volume: 1000,
-          };
-          eventBus.publish('candle_closed', candle);
-        }
-      }
+  describe('unsubscribe', () => {
+    it('should stop receiving events after unsubscribe', () => {
+      const eventHandler = jest.fn();
+      eventBus.subscribe<MarketRegimeEvent>('market_regime_changed', eventHandler);
 
-      // Check if market_regime_changed was emitted
-      const regimeCalls = publishSpy.mock.calls.filter(
-        call => call[0] === 'market_regime_changed'
-      );
+      // First event
+      eventBus.publish('market_regime_1h_updated', {
+        regime: 'TRENDING_UP',
+        trendDirection: 'BULLISH',
+        confidence: 0.75,
+        timestamp: Date.now(),
+        ema200: 50000,
+        adx14: 30,
+        price: 51000,
+      });
+
+      expect(eventHandler).toHaveBeenCalledTimes(1);
+
+      // Unsubscribe
+      detector.unsubscribe();
+
+      // Second event - should not be processed
+      eventBus.publish('market_regime_1h_updated', {
+        regime: 'TRENDING_DOWN',
+        trendDirection: 'BEARISH',
+        confidence: 0.65,
+        timestamp: Date.now(),
+        ema200: 52000,
+        adx14: 28,
+        price: 51000,
+      });
+
+      // Should still be 1 (no new event emitted)
+      expect(eventHandler).toHaveBeenCalledTimes(1);
       
-      expect(regimeCalls.length).toBeGreaterThan(0);
-      
-      const lastRegimeEvent = regimeCalls[regimeCalls.length - 1][1] as MarketRegimeEvent;
-      expect(lastRegimeEvent.regime).toBe('TRENDING_UP');
-      expect(lastRegimeEvent.trendDirection).toBe('BULLISH');
-      expect(lastRegimeEvent.confidence).toBeGreaterThan(0);
+      // Regime should remain unchanged
+      expect(detector.getCurrentRegime()?.regime).toBe('TRENDING_UP');
     });
 
-    it('should detect TRENDING_DOWN when price < EMA20 and ADX > 25', () => {
-      // NOTE: This test is simplified due to mock limitations
-      // In real implementation, EMA trails price and ADX measures trend strength
-      const publishSpy = jest.spyOn(eventBus, 'publish');
+    it('should handle multiple unsubscribe calls safely', () => {
+      detector.unsubscribe();
+      detector.unsubscribe(); // Should not throw
       
-      // Create candles with low prices (below 95 to trigger trending detection)
-      // Need 25 candles of 15m = 375 candles of 1m
-      for (let candle15m = 0; candle15m < 25; candle15m++) {
-        for (let minute = 0; minute < 15; minute++) {
-          const price = 80 - candle15m * 0.1; // Price below 95
-          const candle: Candle = {
-            symbol: 'BTC/USDT',
-            open: price,
-            high: price + 2,
-            low: price - 5,
-            close: price,
-            timestamp: Date.now() + (candle15m * 15 + minute) * 60000,
-            volume: 1000,
-          };
-          eventBus.publish('candle_closed', candle);
-        }
-      }
-
-      const regimeCalls = publishSpy.mock.calls.filter(
-        call => call[0] === 'market_regime_changed'
-      );
-      
-      expect(regimeCalls.length).toBeGreaterThan(0);
-      
-      // With simplified mocks, we verify a regime was detected
-      const lastRegimeEvent = regimeCalls[regimeCalls.length - 1][1] as MarketRegimeEvent;
-      expect(['TRENDING_UP', 'TRENDING_DOWN', 'RANGING']).toContain(lastRegimeEvent.regime);
-    });
-
-    it('should detect RANGING when ADX < 25', () => {
-      const publishSpy = jest.spyOn(eventBus, 'publish');
-      
-      // Create ranging market candles (sideways)
-      // Need 25 candles of 15m = 375 candles of 1m
-      for (let candle15m = 0; candle15m < 25; candle15m++) {
-        for (let minute = 0; minute < 15; minute++) {
-          const price = 100 + Math.sin(candle15m * 0.1) * 5; // Oscillate around 100
-          const candle: Candle = {
-            symbol: 'BTC/USDT',
-            open: price,
-            high: price + 3,
-            low: price - 3,
-            close: price + (Math.random() - 0.5),
-            timestamp: Date.now() + (candle15m * 15 + minute) * 60000,
-            volume: 1000,
-          };
-          eventBus.publish('candle_closed', candle);
-        }
-      }
-
-      const regimeCalls = publishSpy.mock.calls.filter(
-        call => call[0] === 'market_regime_changed'
-      );
-      
-      expect(regimeCalls.length).toBeGreaterThan(0);
-      
-      const lastRegimeEvent = regimeCalls[regimeCalls.length - 1][1] as MarketRegimeEvent;
-      expect(lastRegimeEvent.regime).toBe('RANGING');
-      expect(lastRegimeEvent.trendDirection).toBe('NEUTRAL');
-    });
-
-    it('should include timestamp in regime event', () => {
-      const publishSpy = jest.spyOn(eventBus, 'publish');
-      
-      // Add enough candles - need 25 candles of 15m = 375 candles of 1m
-      for (let i = 0; i < 25 * 15; i++) {
-        const candle: Candle = {
-          symbol: 'BTC/USDT',
-          open: 100,
-          high: 105,
-          low: 95,
-          close: 110, // Above EMA to trigger uptrend
-          timestamp: Date.now() + i * 60000,
-          volume: 1000,
-        };
-        eventBus.publish('candle_closed', candle);
-      }
-
-      const regimeCalls = publishSpy.mock.calls.filter(
-        call => call[0] === 'market_regime_changed'
-      );
-      
-      expect(regimeCalls.length).toBeGreaterThan(0);
-      
-      const lastRegimeEvent = regimeCalls[regimeCalls.length - 1][1] as MarketRegimeEvent;
-      expect(lastRegimeEvent.timestamp).toBeDefined();
-      expect(typeof lastRegimeEvent.timestamp).toBe('number');
+      expect(detector.getCurrentRegime()).toBeNull();
     });
   });
 
-  describe('Current Regime Access', () => {
-    it('should return null when no regime calculated yet', () => {
+  describe('edge cases', () => {
+    it('should handle initial null regime gracefully', () => {
       expect(detector.getCurrentRegime()).toBeNull();
     });
 
-    it('should return current regime after calculation', () => {
-      // Add enough candles - need 25 candles of 15m = 375 candles of 1m
-      for (let i = 0; i < 25 * 15; i++) {
-        const candle: Candle = {
-          symbol: 'BTC/USDT',
-          open: 100,
-          high: 105,
-          low: 95,
-          close: 110,
-          timestamp: Date.now() + i * 60000,
-          volume: 1000,
-        };
-        eventBus.publish('candle_closed', candle);
-      }
+    it('should not emit event if regime is same as current', () => {
+      const eventHandler = jest.fn();
+      eventBus.subscribe<MarketRegimeEvent>('market_regime_changed', eventHandler);
 
-      const regime = detector.getCurrentRegime();
-      expect(regime).not.toBeNull();
-      expect(['TRENDING_UP', 'TRENDING_DOWN', 'RANGING']).toContain(regime?.regime);
-    });
-  });
+      // Set initial regime
+      eventBus.publish('market_regime_1h_updated', {
+        regime: 'TRENDING_UP',
+        trendDirection: 'BULLISH',
+        confidence: 0.75,
+        timestamp: Date.now(),
+        ema200: 50000,
+        adx14: 30,
+        price: 51000,
+      });
 
-  describe('Unsubscribe', () => {
-    it('should stop receiving events after unsubscribe', () => {
-      const publishSpy = jest.spyOn(eventBus, 'publish');
-      
-      // Unsubscribe
-      detector.unsubscribe();
-      
-      // Clear previous calls
-      publishSpy.mockClear();
-      
-      // Publish candles
-      for (let i = 0; i < 100; i++) {
-        const candle: Candle = {
-          symbol: 'BTC/USDT',
-          open: 100,
-          high: 105,
-          low: 95,
-          close: 110,
-          timestamp: Date.now() + i * 60000,
-          volume: 1000,
-        };
-        eventBus.publish('candle_closed', candle);
-      }
+      expect(eventHandler).toHaveBeenCalledTimes(1);
 
-      // Should not emit market_regime_changed after unsubscribe
-      const regimeCalls = publishSpy.mock.calls.filter(
-        call => call[0] === 'market_regime_changed'
-      );
-      expect(regimeCalls.length).toBe(0);
-    });
-  });
+      // Publish same regime again
+      eventBus.publish('market_regime_1h_updated', {
+        regime: 'TRENDING_UP',
+        trendDirection: 'BULLISH',
+        confidence: 0.76, // Slight difference
+        timestamp: Date.now(),
+        ema200: 50100,
+        adx14: 31,
+        price: 51100,
+      });
 
-  describe('Regime Change Deduplication', () => {
-    it('should emit event only when regime changes', () => {
-      const publishSpy = jest.spyOn(eventBus, 'publish');
-      
-      // Add candles with consistent regime - need 25 candles of 15m = 375 candles of 1m
-      for (let i = 0; i < 25 * 15; i++) {
-        const candle: Candle = {
-          symbol: 'BTC/USDT',
-          open: 100,
-          high: 105,
-          low: 95,
-          close: 110,
-          timestamp: Date.now() + i * 60000,
-          volume: 1000,
-        };
-        eventBus.publish('candle_closed', candle);
-      }
-
-      const regimeCalls = publishSpy.mock.calls.filter(
-        call => call[0] === 'market_regime_changed'
-      );
-      
-      // Should emit at least once but not excessively
-      expect(regimeCalls.length).toBeGreaterThan(0);
+      // Should not emit again
+      expect(eventHandler).toHaveBeenCalledTimes(1);
     });
   });
 });

@@ -12,6 +12,7 @@ import { ITradeRepository, Trade } from './infrastructure/db/ITradeRepository';
 import { SignalGenerated, Candle } from '../../shared/src/events';
 import { BinanceWsClient } from './infrastructure/BinanceWsClient';
 import { BinanceRestClient } from './infrastructure/BinanceRestClient';
+import { BinanceRestClient1H } from './infrastructure/BinanceRestClient1H';
 import { TelegramService } from './services/TelegramService';
 
 // Simple in-memory trade repository for demo
@@ -40,7 +41,7 @@ console.log('✅ IndicatorEngine initialized - calculating EMA, VWAP, RSI, MACD,
 
 // Initialize MarketRegimeDetector (Multi-Timeframe Analysis)
 const regimeDetector = new MarketRegimeDetector(eventBus);
-console.log('✅ MarketRegimeDetector initialized - analyzing 1H trend with EMA200 + ADX');
+console.log('✅ MarketRegimeDetector initialized - listening to 1H regime updates (EMA200 + ADX)');
 
 // Initialize PaperTradingEngine (simulated execution)
 const tradeRepository = new InMemoryTradeRepository();
@@ -141,44 +142,55 @@ eventBus.subscribe<Trade>('trade_executed', async (trade) => {
 console.log('✅ Frontend Gateway listening on ws://localhost:8081');
 console.log('✅ All systems connected and running\n');
 
-// Binance WebSocket client (defined here for access in shutdown handler)
-let binanceClient: BinanceWsClient | null = null;
+// Binance clients (defined here for access in shutdown handler)
+let binanceWsClient: BinanceWsClient | null = null;
+let binanceRestClient1H: BinanceRestClient1H | null = null;
 
 // Fetch historical candles before connecting WebSocket
 async function bootstrap(): Promise<void> {
-  console.log('📚 Loading historical candles for indicator pre-calculation...');
+  console.log('📚 Loading historical 5m candles for indicator pre-calculation...');
   
   const restClient = new BinanceRestClient({
     symbol: 'BTCUSDT',
-    interval: '1m',
+    interval: '5m',
     limit: 300,
   });
 
   try {
     const historicalCandles = await restClient.fetchWithProgress(
       (current, total) => {
-        process.stdout.write(`\r   Loading ${total} historical candles... ${current}/${total}`);
+        process.stdout.write(`\r   Loading ${total} historical 5m candles... ${current}/${total}`);
       }
     );
 
-    console.log('\n✅ Historical candles loaded\n');
+    console.log('\n✅ Historical 5m candles loaded\n');
 
     // Publish all historical candles to pre-populate IndicatorEngine
     console.log('📤 Publishing historical candles to indicator engine...');
     for (const candle of historicalCandles) {
       eventBus.publish('candle_closed', candle);
     }
-    console.log(`✅ Published ${historicalCandles.length} historical candles\n`);
+    console.log(`✅ Published ${historicalCandles.length} historical 5m candles\n`);
   } catch (error) {
     console.error('❌ Failed to load historical candles:', error);
     console.log('⚠️  Continuing without historical data (indicators will need warm-up)\n');
   }
 
-  // Connect WebSocket for real-time updates (regardless of whether historical fetch succeeded)
-  console.log('🔌 Connecting to Binance WebSocket for real-time data...');
-  binanceClient = new BinanceWsClient(eventBus, 'btcusdt');
-  binanceClient.connect();
-  console.log('✅ Connected to Binance WebSocket API\n');
+  // Initialize 1H REST client for macro trend analysis
+  console.log('🔌 Initializing Binance REST Client for 1H macro trend analysis...');
+  binanceRestClient1H = new BinanceRestClient1H(eventBus, {
+    symbol: 'BTCUSDT',
+    pollingIntervalMinutes: 60,
+    candleLimit: 200,
+  });
+  binanceRestClient1H.start();
+  console.log('✅ Binance REST Client (1H) initialized - polling every 60 minutes\n');
+
+  // Connect WebSocket for real-time 5m updates (regardless of whether historical fetch succeeded)
+  console.log('🔌 Connecting to Binance WebSocket for real-time 5m data...');
+  binanceWsClient = new BinanceWsClient(eventBus, 'btcusdt', '5m');
+  binanceWsClient.connect();
+  console.log('✅ Connected to Binance WebSocket API (5m candles)\n');
 }
 
 // Start the bootstrap process
@@ -190,9 +202,13 @@ process.on('SIGINT', () => {
   indicatorEngine.unsubscribe();
   regimeDetector.unsubscribe();
   frontendGateway.close();
-  if (binanceClient) {
-    binanceClient.close();
+  if (binanceWsClient) {
+    binanceWsClient.close();
     console.log('✅ Binance WebSocket connection closed');
+  }
+  if (binanceRestClient1H) {
+    binanceRestClient1H.stop();
+    console.log('✅ Binance REST Client (1H) stopped');
   }
   console.log('✅ All components stopped');
   process.exit(0);

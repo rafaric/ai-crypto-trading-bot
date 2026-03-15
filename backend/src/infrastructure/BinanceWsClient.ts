@@ -19,7 +19,7 @@ export class BinanceWsClient {
   constructor(
     private eventBus: EventBus,
     private symbol: string = 'btcusdt',
-    private interval: string = '1m'
+    private interval: string = '5m'
   ) {}
 
   public connect(): void {
