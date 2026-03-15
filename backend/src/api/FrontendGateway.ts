@@ -11,9 +11,9 @@ export class FrontendGateway {
   private unsubscribeIndicators: (() => void) | null = null;
   private unsubscribeSignal: (() => void) | null = null;
   private unsubscribeRegime: (() => void) | null = null;
-  private candlesCache: Candle[] = [];
+  private candlesCache: Map<string, Candle[]> = new Map();
   private readonly MAX_CACHED_CANDLES = 300;
-  private latestIndicators: IndicatorsUpdatedEvent | null = null;
+  private latestIndicators: Map<string, IndicatorsUpdatedEvent> = new Map();
   private latestRegime: MarketRegimeEvent | null = null;
 
   constructor(private eventBus: EventBus, port: number = 8081) {
@@ -31,16 +31,20 @@ export class FrontendGateway {
       }));
 
       // Send cached candles to new client so they see full history
-      if (this.candlesCache.length > 0) {
-        console.log(`📊 Sending ${this.candlesCache.length} historical candles to new client`);
-        for (const candle of this.candlesCache) {
+      let totalCandles = 0;
+      for (const [symbol, candles] of this.candlesCache) {
+        totalCandles += candles.length;
+        for (const candle of candles) {
           ws.send(JSON.stringify({ type: 'candle_closed', payload: candle }));
         }
       }
+      if (totalCandles > 0) {
+        console.log(`📊 Sending ${totalCandles} historical candles (${this.candlesCache.size} pairs) to new client`);
+      }
 
-      // Send latest indicators state if available
-      if (this.latestIndicators) {
-        ws.send(JSON.stringify({ type: 'indicators_updated', payload: this.latestIndicators }));
+      // Send latest indicators state for all pairs
+      for (const [symbol, indicators] of this.latestIndicators) {
+        ws.send(JSON.stringify({ type: 'indicators_updated', payload: indicators }));
       }
 
       // Send latest market regime if available
@@ -83,17 +87,22 @@ export class FrontendGateway {
 
     // Subscribe to events and broadcast them to all connected clients
     this.unsubscribeCandle = this.eventBus.subscribe<Candle>('candle_closed', (payload) => {
-      // Add candle to cache for late-connecting clients
-      this.candlesCache.push(payload);
-      if (this.candlesCache.length > this.MAX_CACHED_CANDLES) {
-        this.candlesCache.shift();
+      // Add candle to cache per symbol for late-connecting clients
+      const symbol = payload.symbol;
+      if (!this.candlesCache.has(symbol)) {
+        this.candlesCache.set(symbol, []);
+      }
+      const cache = this.candlesCache.get(symbol)!;
+      cache.push(payload);
+      if (cache.length > this.MAX_CACHED_CANDLES) {
+        cache.shift();
       }
       this.broadcast('candle_closed', payload);
     });
 
     this.unsubscribeIndicators = this.eventBus.subscribe<IndicatorsUpdatedEvent>('indicators_updated', (payload) => {
-      // Store latest indicators for late-connecting clients
-      this.latestIndicators = payload;
+      // Store latest indicators per symbol for late-connecting clients
+      this.latestIndicators.set(payload.symbol, payload);
       this.broadcast('indicators_updated', payload);
     });
 
