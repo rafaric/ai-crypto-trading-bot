@@ -10,7 +10,7 @@ export interface MarketRegimeEvent {
   timestamp: number;
 }
 
-interface HourlyCandle {
+interface FifteenMinuteCandle {
   open: number;
   high: number;
   low: number;
@@ -19,33 +19,31 @@ interface HourlyCandle {
   volume: number;
 }
 
-const MAX_HOURLY_CANDLES = 250; // Enough for EMA200 + buffer
+const MAX_FIFTEEN_MINUTE_CANDLES = 50; // Enough for EMA20 + buffer
 const ADX_THRESHOLD = 25;
 const EMA_PROXIMITY_THRESHOLD = 0.005; // 0.5% proximity to EMA
+const CANDLES_PER_15M = 15; // 15 candles of 1m = 1 candle of 15m
 
 export class MarketRegimeDetector {
   private eventBus: EventBus;
   private unsubscribeFn: (() => void) | null = null;
   
   // 1-minute candles cache for aggregation
-  private oneMinuteCandles: Candle[] = [];
+  private minuteCandles: Candle[] = [];
   
-  // 1-hour aggregated candles
-  private hourlyCandles: HourlyCandle[] = [];
+  // 15-minute aggregated candles
+  private fifteenMinuteCandles: FifteenMinuteCandle[] = [];
   
-  // Indicators for 1H timeframe
-  private ema200: EMA;
+  // Indicators for 15m timeframe
+  private ema: EMA;
   private adx: ADX;
   
   // Current regime state
   private currentRegime: MarketRegimeEvent | null = null;
-  
-  // Track current hour for aggregation
-  private currentHourTimestamp: number | null = null;
 
   constructor(eventBus: EventBus) {
     this.eventBus = eventBus;
-    this.ema200 = new EMA(200);
+    this.ema = new EMA(20);
     this.adx = new ADX(14);
     
     // Subscribe to candle_closed event
@@ -77,108 +75,71 @@ export class MarketRegimeDetector {
    */
   private handleCandleClosed(candle: Candle): void {
     // Store 1-minute candle
-    this.oneMinuteCandles.push(candle);
-    
-    // Keep only recent 1-minute candles (last 2 hours)
-    if (this.oneMinuteCandles.length > 120) {
-      this.oneMinuteCandles.shift();
+    this.minuteCandles.push(candle);
+
+    // Check if we have enough candles to create a 15m candle
+    if (this.minuteCandles.length >= CANDLES_PER_15M) {
+      this.aggregateTo15m();
     }
 
-    // Aggregate into 1-hour candle
-    this.aggregateToHourly(candle);
+    // Keep only recent 1-minute candles (last 2 periods for buffer)
+    if (this.minuteCandles.length > CANDLES_PER_15M * 2) {
+      this.minuteCandles.shift();
+    }
   }
 
   /**
-   * Aggregate 1-minute candles into 1-hour candles
+   * Aggregate 1-minute candles into 15-minute candles
    */
-  private aggregateToHourly(candle: Candle): void {
-    const hourTimestamp = this.getHourTimestamp(candle.timestamp);
-    
-    if (this.currentHourTimestamp === null) {
-      this.currentHourTimestamp = hourTimestamp;
-    }
+  private aggregateTo15m(): void {
+    // Take the first 15 candles
+    const candles = this.minuteCandles.slice(0, CANDLES_PER_15M);
+    this.minuteCandles = this.minuteCandles.slice(CANDLES_PER_15M);
 
-    if (hourTimestamp !== this.currentHourTimestamp) {
-      // Hour changed, finalize previous hour candle
-      this.finalizeHourlyCandle();
-      this.currentHourTimestamp = hourTimestamp;
-    }
+    // Create 15m candle from 1m candles
+    const fifteenMinCandle: FifteenMinuteCandle = {
+      open: candles[0].open,
+      high: Math.max(...candles.map(c => c.high)),
+      low: Math.min(...candles.map(c => c.low)),
+      close: candles[candles.length - 1].close,
+      timestamp: candles[0].timestamp,
+      volume: candles.reduce((sum, c) => sum + c.volume, 0),
+    };
 
-    // Add to current hour's candles
-    // The hourly candle is built incrementally
-    const existingHourlyCandle = this.hourlyCandles.find(
-      c => c.timestamp === this.currentHourTimestamp
-    );
-
-    if (existingHourlyCandle) {
-      // Update existing hourly candle
-      existingHourlyCandle.high = Math.max(existingHourlyCandle.high, candle.high);
-      existingHourlyCandle.low = Math.min(existingHourlyCandle.low, candle.low);
-      existingHourlyCandle.close = candle.close;
-      existingHourlyCandle.volume += candle.volume;
-    } else {
-      // Create new hourly candle
-      this.hourlyCandles.push({
-        open: candle.open,
-        high: candle.high,
-        low: candle.low,
-        close: candle.close,
-        timestamp: this.currentHourTimestamp,
-        volume: candle.volume,
-      });
-    }
+    // Add to 15m candles array
+    this.fifteenMinuteCandles.push(fifteenMinCandle);
 
     // Maintain bounded cache
-    if (this.hourlyCandles.length > MAX_HOURLY_CANDLES) {
-      this.hourlyCandles.shift();
+    if (this.fifteenMinuteCandles.length > MAX_FIFTEEN_MINUTE_CANDLES) {
+      this.fifteenMinuteCandles.shift();
     }
 
-    // Check if we should recalculate regime
-    // Only recalculate when we have enough data and a new hour starts
-    if (hourTimestamp !== this.currentHourTimestamp || this.hourlyCandles.length >= 200) {
-      this.calculateAndEmitRegime();
-    }
-  }
-
-  /**
-   * Finalize the current hourly candle when hour changes
-   */
-  private finalizeHourlyCandle(): void {
-    // Trigger regime calculation when an hour completes
+    // Recalculate regime after adding new 15m candle
     this.calculateAndEmitRegime();
-  }
-
-  /**
-   * Get hour timestamp (floor to nearest hour)
-   */
-  private getHourTimestamp(timestamp: number): number {
-    const date = new Date(timestamp);
-    date.setMinutes(0, 0, 0);
-    return date.getTime();
   }
 
   /**
    * Calculate market regime and emit event if changed
    */
   private calculateAndEmitRegime(): void {
-    // Need at least 200 hourly candles for EMA200
-    if (this.hourlyCandles.length < 200) {
+    // Need at least 20 fifteen-minute candles for EMA20
+    if (this.fifteenMinuteCandles.length < 20) {
       return;
     }
 
-    // Convert hourly candles to format expected by indicators
-    const candlesForIndicators: Candle[] = this.hourlyCandles.map(h => ({
+    // Convert 15m candles to format expected by indicators
+    const candlesForIndicators: Candle[] = this.fifteenMinuteCandles.map((f15: FifteenMinuteCandle) => ({
       symbol: 'BTC/USDT',
-      open: h.open,
-      high: h.high,
-      low: h.low,
-      close: h.close,
-      timestamp: h.timestamp,
-      volume: h.volume,
+      open: f15.open,
+      high: f15.high,
+      low: f15.low,
+      close: f15.close,
+      timestamp: f15.timestamp,
+      volume: f15.volume,
     }));
 
-    // Calculate EMA200
-    const emaValues = this.ema200.calculate(candlesForIndicators);
+    // Calculate EMA20
+    const emaValues = this.ema.calculate(candlesForIndicators);
     const currentEMA = emaValues[emaValues.length - 1];
 
     // Calculate ADX
@@ -189,7 +150,7 @@ export class MarketRegimeDetector {
       return;
     }
 
-    const lastCandle = this.hourlyCandles[this.hourlyCandles.length - 1];
+    const lastCandle = this.fifteenMinuteCandles[this.fifteenMinuteCandles.length - 1];
     const currentPrice = lastCandle.close;
 
     // Determine regime
@@ -200,7 +161,7 @@ export class MarketRegimeDetector {
     // Check if ADX indicates strong trend
     const isStrongTrend = currentADX >= ADX_THRESHOLD;
     
-    // Check price position relative to EMA200
+    // Check price position relative to EMA20
     const isAboveEMA = currentPrice > currentEMA;
     const isNearEMA = Math.abs(currentPrice - currentEMA) / currentEMA < EMA_PROXIMITY_THRESHOLD;
 
@@ -210,12 +171,12 @@ export class MarketRegimeDetector {
       trendDirection = 'NEUTRAL';
       confidence = Math.max(0, (ADX_THRESHOLD - currentADX) / ADX_THRESHOLD);
     } else if (isAboveEMA) {
-      // Price above EMA200 with strong trend
+      // Price above EMA20 with strong trend
       regime = 'TRENDING_UP';
       trendDirection = 'BULLISH';
       confidence = Math.min(1, currentADX / 50); // Normalize ADX to confidence
     } else {
-      // Price below EMA200 with strong trend
+      // Price below EMA20 with strong trend
       regime = 'TRENDING_DOWN';
       trendDirection = 'BEARISH';
       confidence = Math.min(1, currentADX / 50); // Normalize ADX to confidence

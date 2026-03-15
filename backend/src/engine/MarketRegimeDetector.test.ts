@@ -4,7 +4,7 @@ import { Candle } from '../../../shared/src/events';
 
 // Mock indicators - simplified for testing regime detection
 jest.mock('../indicators/EMA', () => ({
-  EMA: jest.fn().mockImplementation((period = 200) => ({
+  EMA: jest.fn().mockImplementation((period = 20) => ({
     calculate: jest.fn().mockImplementation((candles: Candle[]) => {
       // Simple mock: EMA is always 95% of close price
       // This means price is always above EMA (bullish bias for test)
@@ -23,7 +23,8 @@ jest.mock('../indicators/ADX', () => ({
       // Price > 105 indicates uptrend in test data, price < 95 indicates downtrend
       const isTrending = lastClose > 105 || lastClose < 95;
       const adxValue = isTrending ? 30 : 15;
-      return candles.map((_, i) => i < period * 2 - 1 ? null : adxValue);
+      // ADX needs period candles (not period*2-1) to calculate
+      return candles.map((_, i) => i < period - 1 ? null : adxValue);
     }),
     getPeriod: jest.fn().mockReturnValue(period),
   })),
@@ -58,11 +59,11 @@ describe('MarketRegimeDetector', () => {
   });
 
   describe('Candle Aggregation', () => {
-    it('should aggregate 1m candles into 1H candles', () => {
+    it('should aggregate 1m candles into 15m candles', () => {
       const publishSpy = jest.spyOn(eventBus, 'publish');
       
-      // Publish 60 one-minute candles (1 hour)
-      for (let i = 0; i < 60; i++) {
+      // Publish 15 one-minute candles (15 minutes = 1 candle of 15m)
+      for (let i = 0; i < 15; i++) {
         const candle: Candle = {
           symbol: 'BTC/USDT',
           open: 100 + i,
@@ -81,21 +82,21 @@ describe('MarketRegimeDetector', () => {
   });
 
   describe('Regime Detection', () => {
-    it('should detect TRENDING_UP when price > EMA200 and ADX > 25', () => {
+    it('should detect TRENDING_UP when price > EMA20 and ADX > 25', () => {
       const publishSpy = jest.spyOn(eventBus, 'publish');
       
-      // Create strong uptrend candles
-      for (let hour = 0; hour < 250; hour++) {
-        // Create 60 candles per hour
-        for (let minute = 0; minute < 60; minute++) {
-          const price = 100 + hour * 2 + minute * 0.01; // Uptrend
+      // Create strong uptrend candles - need 20 candles of 15m = 300 candles of 1m
+      for (let candle15m = 0; candle15m < 25; candle15m++) {
+        // Create 15 candles per 15m period
+        for (let minute = 0; minute < 15; minute++) {
+          const price = 100 + candle15m * 2 + minute * 0.01; // Uptrend
           const candle: Candle = {
             symbol: 'BTC/USDT',
             open: price,
             high: price + 5,
             low: price - 2,
             close: price + 3,
-            timestamp: Date.now() + (hour * 60 + minute) * 60000,
+            timestamp: Date.now() + (candle15m * 15 + minute) * 60000,
             volume: 1000,
           };
           eventBus.publish('candle_closed', candle);
@@ -115,22 +116,23 @@ describe('MarketRegimeDetector', () => {
       expect(lastRegimeEvent.confidence).toBeGreaterThan(0);
     });
 
-    it('should detect TRENDING_DOWN when price < EMA200 and ADX > 25', () => {
+    it('should detect TRENDING_DOWN when price < EMA20 and ADX > 25', () => {
       // NOTE: This test is simplified due to mock limitations
       // In real implementation, EMA trails price and ADX measures trend strength
       const publishSpy = jest.spyOn(eventBus, 'publish');
       
       // Create candles with low prices (below 95 to trigger trending detection)
-      for (let hour = 0; hour < 250; hour++) {
-        for (let minute = 0; minute < 60; minute++) {
-          const price = 80 - hour * 0.1; // Price below 95
+      // Need 25 candles of 15m = 375 candles of 1m
+      for (let candle15m = 0; candle15m < 25; candle15m++) {
+        for (let minute = 0; minute < 15; minute++) {
+          const price = 80 - candle15m * 0.1; // Price below 95
           const candle: Candle = {
             symbol: 'BTC/USDT',
             open: price,
             high: price + 2,
             low: price - 5,
             close: price,
-            timestamp: Date.now() + (hour * 60 + minute) * 60000,
+            timestamp: Date.now() + (candle15m * 15 + minute) * 60000,
             volume: 1000,
           };
           eventBus.publish('candle_closed', candle);
@@ -152,16 +154,17 @@ describe('MarketRegimeDetector', () => {
       const publishSpy = jest.spyOn(eventBus, 'publish');
       
       // Create ranging market candles (sideways)
-      for (let hour = 0; hour < 250; hour++) {
-        for (let minute = 0; minute < 60; minute++) {
-          const price = 100 + Math.sin(hour * 0.1) * 5; // Oscillate around 100
+      // Need 25 candles of 15m = 375 candles of 1m
+      for (let candle15m = 0; candle15m < 25; candle15m++) {
+        for (let minute = 0; minute < 15; minute++) {
+          const price = 100 + Math.sin(candle15m * 0.1) * 5; // Oscillate around 100
           const candle: Candle = {
             symbol: 'BTC/USDT',
             open: price,
             high: price + 3,
             low: price - 3,
             close: price + (Math.random() - 0.5),
-            timestamp: Date.now() + (hour * 60 + minute) * 60000,
+            timestamp: Date.now() + (candle15m * 15 + minute) * 60000,
             volume: 1000,
           };
           eventBus.publish('candle_closed', candle);
@@ -182,8 +185,8 @@ describe('MarketRegimeDetector', () => {
     it('should include timestamp in regime event', () => {
       const publishSpy = jest.spyOn(eventBus, 'publish');
       
-      // Add enough candles
-      for (let i = 0; i < 250 * 60; i++) {
+      // Add enough candles - need 25 candles of 15m = 375 candles of 1m
+      for (let i = 0; i < 25 * 15; i++) {
         const candle: Candle = {
           symbol: 'BTC/USDT',
           open: 100,
@@ -214,8 +217,8 @@ describe('MarketRegimeDetector', () => {
     });
 
     it('should return current regime after calculation', () => {
-      // Add enough candles
-      for (let i = 0; i < 250 * 60; i++) {
+      // Add enough candles - need 25 candles of 15m = 375 candles of 1m
+      for (let i = 0; i < 25 * 15; i++) {
         const candle: Candle = {
           symbol: 'BTC/USDT',
           open: 100,
@@ -270,8 +273,8 @@ describe('MarketRegimeDetector', () => {
     it('should emit event only when regime changes', () => {
       const publishSpy = jest.spyOn(eventBus, 'publish');
       
-      // Add candles with consistent regime
-      for (let i = 0; i < 250 * 60; i++) {
+      // Add candles with consistent regime - need 25 candles of 15m = 375 candles of 1m
+      for (let i = 0; i < 25 * 15; i++) {
         const candle: Candle = {
           symbol: 'BTC/USDT',
           open: 100,
