@@ -186,6 +186,14 @@ describe('IndicatorEngine', () => {
 
   describe('Signal Detection', () => {
     it('should emit SignalGenerated when bullish pattern is detected', () => {
+      // Set regime first - signals blocked until regime is calculated
+      eventBus.publish('market_regime_changed', {
+        regime: 'TRENDING_UP',
+        trendDirection: 'BULLISH',
+        confidence: 0.8,
+        timestamp: Date.now(),
+      });
+
       // Re-mock CandlestickPatterns to return a bullish signal
       const { CandlestickPatterns } = require('../indicators/CandlestickPatterns');
       CandlestickPatterns.scan.mockReturnValueOnce([
@@ -238,6 +246,14 @@ describe('IndicatorEngine', () => {
     });
 
     it('should emit SignalGenerated when bearish pattern is detected', () => {
+      // Set regime first - signals blocked until regime is calculated
+      eventBus.publish('market_regime_changed', {
+        regime: 'TRENDING_DOWN',
+        trendDirection: 'BEARISH',
+        confidence: 0.8,
+        timestamp: Date.now(),
+      });
+
       // Re-mock CandlestickPatterns to return a bearish signal
       const { CandlestickPatterns } = require('../indicators/CandlestickPatterns');
       CandlestickPatterns.scan.mockReturnValueOnce([
@@ -561,6 +577,43 @@ describe('IndicatorEngine', () => {
   });
 
   describe('Market Regime Signal Filtering', () => {
+    it('should NOT emit signals when no regime is set (startup)', () => {
+      // Mock bullish pattern
+      const { CandlestickPatterns } = require('../indicators/CandlestickPatterns');
+      CandlestickPatterns.scan.mockReturnValueOnce([
+        {
+          pattern: 'Bullish Engulfing',
+          type: 'bullish',
+          confidence: 0.85,
+          timestamp: Date.now(),
+          index: 10,
+        },
+      ]);
+
+      const publishSpy = jest.spyOn(eventBus, 'publish');
+      publishSpy.mockClear();
+
+      // Add enough data
+      for (let i = 0; i < 50; i++) {
+        eventBus.publish('candle_closed', {
+          symbol: 'BTC/USDT',
+          open: 50000,
+          high: 50500,
+          low: 49500,
+          close: 50200,
+          timestamp: Date.now() - (50 - i) * 60000,
+          volume: 1000,
+        });
+      }
+
+      const signalCalls = publishSpy.mock.calls.filter(
+        call => call[0] === 'SignalGenerated'
+      );
+
+      // Should NOT emit signals when no regime is set
+      expect(signalCalls.length).toBe(0);
+    });
+
     it('should emit BUY signal when regime is TRENDING_UP', () => {
       // Set regime to TRENDING_UP
       eventBus.publish('market_regime_changed', {

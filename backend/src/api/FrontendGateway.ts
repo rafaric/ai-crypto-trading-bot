@@ -12,7 +12,7 @@ export class FrontendGateway {
   private unsubscribeSignal: (() => void) | null = null;
   private unsubscribeRegime: (() => void) | null = null;
   private candlesCache: Candle[] = [];
-  private readonly MAX_CACHED_CANDLES = 200;
+  private readonly MAX_CACHED_CANDLES = 300;
   private latestIndicators: IndicatorsUpdatedEvent | null = null;
   private latestRegime: MarketRegimeEvent | null = null;
 

@@ -328,6 +328,12 @@ export class IndicatorEngine {
     pattern: string;
     confidence: number;
   } | null {
+    // Don't emit signals until we have a calculated regime
+    if (!this.currentRegime) {
+      console.log(`⏳ Signal detection paused - waiting for market regime calculation (${this.candlesCache.length}/300 candles)`);
+      return null; // Skip signal emission
+    }
+
     // Check for recent patterns from candlestick scanner
     const patterns = indicators.candlestick.patterns;
 

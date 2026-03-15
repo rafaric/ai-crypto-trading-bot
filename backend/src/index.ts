@@ -151,7 +151,7 @@ async function bootstrap(): Promise<void> {
   const restClient = new BinanceRestClient({
     symbol: 'BTCUSDT',
     interval: '1m',
-    limit: 200,
+    limit: 300,
   });
 
   try {

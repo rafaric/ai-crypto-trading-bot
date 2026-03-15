@@ -8,7 +8,7 @@ describe('BinanceRestClient', () => {
     client = new BinanceRestClient({
       symbol: 'BTCUSDT',
       interval: '1m',
-      limit: 200,
+      limit: 300,
     });
   });
 
@@ -129,9 +129,9 @@ describe('BinanceRestClient', () => {
       
       await client.fetchWithProgress(progressCallback);
 
-      expect(progressCallback).toHaveBeenCalledWith(0, 200);
-      expect(progressCallback).toHaveBeenCalledWith(1, 200);
-      expect(progressCallback).toHaveBeenCalledWith(2, 200);
+      expect(progressCallback).toHaveBeenCalledWith(0, 300);
+      expect(progressCallback).toHaveBeenCalledWith(1, 300);
+      expect(progressCallback).toHaveBeenCalledWith(2, 300);
 
       global.fetch = originalFetch;
     });
