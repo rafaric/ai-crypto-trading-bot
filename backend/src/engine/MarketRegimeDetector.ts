@@ -44,7 +44,7 @@ export class MarketRegimeDetector {
   constructor(eventBus: EventBus) {
     this.eventBus = eventBus;
     this.ema = new EMA(20);
-    this.adx = new ADX(14);
+    this.adx = new ADX(10); // ADX 10 needs only 19 candles (vs 27 for ADX 14)
     
     // Subscribe to candle_closed event
     this.unsubscribeFn = this.eventBus.subscribe<Candle>(
@@ -122,11 +122,11 @@ export class MarketRegimeDetector {
    * Calculate market regime and emit event if changed
    */
   private calculateAndEmitRegime(): void {
-    // Need at least 20 fifteen-minute candles for EMA20
-    console.log(`📊 MarketRegimeDetector: ${this.fifteenMinuteCandles.length}/20 fifteen-minute candles`);
-    
-    if (this.fifteenMinuteCandles.length < 20) {
-      console.log(`⏳ Waiting for more 15m candles: ${this.fifteenMinuteCandles.length}/20`);
+    // Need at least 19 fifteen-minute candles for EMA20 + ADX10
+    console.log(`📊 MarketRegimeDetector: ${this.fifteenMinuteCandles.length}/19 fifteen-minute candles`);
+
+    if (this.fifteenMinuteCandles.length < 19) {
+      console.log(`⏳ Waiting for more 15m candles: ${this.fifteenMinuteCandles.length}/19`);
       return;
     }
 
