@@ -65,10 +65,13 @@ const MAX_CANDLES_CACHE = 300;
 
 export class IndicatorEngine {
   private eventBus: EventBus;
-  private candlesCache: Candle[] = [];
+  
+  // Multi-pair support: Map of symbol -> Candle[]
+  private candlesCache: Map<string, Candle[]> = new Map();
+  
   private unsubscribeFn: (() => void) | null = null;
   
-  // Indicators
+  // Indicators - single instances calculate for any symbol
   private ema: EMA;
   private vwap: VWAP;
   private rsi: RSI;
@@ -76,11 +79,12 @@ export class IndicatorEngine {
   private atr: ATR;
   
   // Signal deduplication - track recently emitted signals to prevent spam
+  // Key: "{symbol}-{pattern}"
   private recentSignals: Map<string, number> = new Map();
   private readonly SIGNAL_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
 
-  // Market regime state
-  private currentRegime: MarketRegimeEvent | null = null;
+  // Market regime state per pair: Map<symbol, MarketRegimeEvent>
+  private currentRegimes: Map<string, MarketRegimeEvent> = new Map();
   private regimeUnsubscribeFn: (() => void) | null = null;
 
   constructor(eventBus: EventBus) {
@@ -107,18 +111,27 @@ export class IndicatorEngine {
   }
 
   /**
-   * Handle market regime changes
+   * Handle market regime changes per pair
    */
-  private handleRegimeChanged(regime: MarketRegimeEvent): void {
-    this.currentRegime = regime;
-    console.log(`📊 IndicatorEngine: Market regime updated - ${regime.regime} (${regime.trendDirection})`);
+  private handleRegimeChanged(regime: MarketRegimeEvent & { symbol?: string }): void {
+    // The regime event should include the symbol
+    const symbol = regime.symbol || 'UNKNOWN';
+    this.currentRegimes.set(symbol, regime);
+    console.log(`📊 IndicatorEngine: Market regime updated for ${symbol} - ${regime.regime} (${regime.trendDirection})`);
   }
 
   /**
-   * Get current market regime
+   * Get current market regime for a specific pair
    */
-  public getCurrentRegime(): MarketRegimeEvent | null {
-    return this.currentRegime;
+  public getCurrentRegime(symbol: string): MarketRegimeEvent | null {
+    return this.currentRegimes.get(symbol) || null;
+  }
+
+  /**
+   * Get all current regimes
+   */
+  public getAllRegimes(): Map<string, MarketRegimeEvent> {
+    return new Map(this.currentRegimes);
   }
 
   /**
@@ -136,56 +149,77 @@ export class IndicatorEngine {
   }
 
   /**
-   * Get current candles cache
+   * Get current candles cache for a specific symbol
    */
-  public getCandlesCache(): Candle[] {
-    return [...this.candlesCache];
+  public getCandlesCache(symbol: string): Candle[] {
+    const cache = this.candlesCache.get(symbol);
+    return cache ? [...cache] : [];
   }
 
   /**
-   * Handle candle_closed event
+   * Get all candles caches (for debugging/monitoring)
+   */
+  public getAllCandlesCaches(): Map<string, Candle[]> {
+    const result = new Map<string, Candle[]>();
+    this.candlesCache.forEach((candles, symbol) => {
+      result.set(symbol, [...candles]);
+    });
+    return result;
+  }
+
+  /**
+   * Handle candle_closed event - process per pair
    */
   private handleCandleClosed(candle: Candle): void {
-    console.log(`🕯️ Processing candle: ${candle.symbol} @ $${candle.close.toFixed(2)}`);
+    const symbol = candle.symbol;
+    console.log(`🕯️ Processing candle: ${symbol} @ $${candle.close.toFixed(2)}`);
+    
+    // Get or create cache for this symbol
+    let symbolCache = this.candlesCache.get(symbol);
+    if (!symbolCache) {
+      symbolCache = [];
+      this.candlesCache.set(symbol, symbolCache);
+    }
     
     // Add candle to cache
-    this.candlesCache.push(candle);
+    symbolCache.push(candle);
     
-    // Maintain bounded cache (max 300 candles)
-    if (this.candlesCache.length > MAX_CANDLES_CACHE) {
-      this.candlesCache.shift();
+    // Maintain bounded cache (max 300 candles per pair)
+    if (symbolCache.length > MAX_CANDLES_CACHE) {
+      symbolCache.shift();
     }
 
-    console.log(`📊 Cache size: ${this.candlesCache.length} candles`);
+    console.log(`📊 Cache size for ${symbol}: ${symbolCache.length} candles`);
 
-    // Calculate all indicators
-    const indicators = this.calculateAllIndicators();
+    // Calculate all indicators for this pair
+    const indicators = this.calculateAllIndicators(symbolCache);
 
-    // Emit indicators_updated event
+    // Emit indicators_updated event with pair symbol included
     console.log('📤 Sending indicators:', {
+      symbol,
       emaSeries: indicators.ema.series?.length,
       vwapSeries: indicators.vwap.series?.length,
       emaValue: indicators.ema.value,
       vwapValue: indicators.vwap.value,
     });
     this.eventBus.publish<IndicatorsUpdatedEvent>('indicators_updated', {
-      symbol: candle.symbol,
+      symbol: symbol,
       indicators,
       timestamp: Date.now(),
     });
 
     // Skip signal generation for historical candles
     if (candle.isHistorical) {
-      console.log(`⏳ Skipping signal check for historical candle`);
+      console.log(`⏳ Skipping signal check for historical candle on ${symbol}`);
       return;
     }
 
     // Check for signals and emit if found (with deduplication)
-    const signal = this.checkForSignals(indicators);
-    if (signal && this.shouldEmitSignal(candle.symbol, signal.pattern)) {
-      console.log(`🚨 Signal detected: ${signal.pattern} (${signal.signal}) for ${candle.symbol}`);
+    const signal = this.checkForIndicators(symbol, indicators);
+    if (signal && this.shouldEmitSignal(symbol, signal.pattern)) {
+      console.log(`🚨 Signal detected: ${signal.pattern} (${signal.signal}) for ${symbol}`);
       this.eventBus.publish<SignalGenerated>('SignalGenerated', {
-        symbol: candle.symbol,
+        symbol: symbol,
         action: signal.signal === 'bullish' ? 'BUY' : 'SELL',
         confidence: signal.confidence,
         strategy: signal.pattern,
@@ -195,11 +229,9 @@ export class IndicatorEngine {
   }
 
   /**
-   * Calculate all indicators from current cache
+   * Calculate all indicators from cache for a specific symbol
    */
-  private calculateAllIndicators(): IndicatorValues {
-    const candles = this.candlesCache;
-
+  private calculateAllIndicators(candles: Candle[]): IndicatorValues {
     // Calculate EMA (needs at least 200 periods)
     let emaValue: number | null = null;
     let emaSeries: IndicatorSeries[] = [];
@@ -321,16 +353,20 @@ export class IndicatorEngine {
 
   /**
    * Check for trading signals based on patterns and indicators
-   * Filters signals according to market regime (Multi-Timeframe Analysis)
+   * Filters signals according to market regime per pair (Multi-Timeframe Analysis)
    */
-  private checkForSignals(indicators: IndicatorValues): {
+  private checkForIndicators(symbol: string, indicators: IndicatorValues): {
     signal: 'bullish' | 'bearish';
     pattern: string;
     confidence: number;
   } | null {
-    // Don't emit signals until we have a calculated regime
-    if (!this.currentRegime) {
-      console.log(`⏳ Signal detection paused - waiting for market regime calculation (${this.candlesCache.length}/300 candles)`);
+    // Get regime for this specific pair
+    const currentRegime = this.currentRegimes.get(symbol);
+    
+    // Don't emit signals until we have a calculated regime for this pair
+    if (!currentRegime) {
+      const cacheSize = this.candlesCache.get(symbol)?.length || 0;
+      console.log(`⏳ Signal detection paused for ${symbol} - waiting for market regime calculation (${cacheSize}/300 candles)`);
       return null; // Skip signal emission
     }
 
@@ -350,24 +386,22 @@ export class IndicatorEngine {
       const isBearish = recentPattern.type === 'bearish';
 
       // Apply Market Regime Filter (MTF Strategy)
-      if (this.currentRegime) {
-        if (this.currentRegime.regime === 'RANGING') {
-          console.log(`🚫 Signal filtered - market ranging (${recentPattern.pattern})`);
-          return null;
-        }
-
-        if (isBullish && this.currentRegime.regime !== 'TRENDING_UP') {
-          console.log(`🚫 BUY signal filtered - not aligned with trend (regime: ${this.currentRegime.regime})`);
-          return null;
-        }
-
-        if (isBearish && this.currentRegime.regime !== 'TRENDING_DOWN') {
-          console.log(`🚫 SELL signal filtered - not aligned with trend (regime: ${this.currentRegime.regime})`);
-          return null;
-        }
-
-        console.log(`✅ Signal aligned with trend (${this.currentRegime.regime}): ${recentPattern.pattern}`);
+      if (currentRegime.regime === 'RANGING') {
+        console.log(`🚫 Signal filtered for ${symbol} - market ranging (${recentPattern.pattern})`);
+        return null;
       }
+
+      if (isBullish && currentRegime.regime !== 'TRENDING_UP') {
+        console.log(`🚫 BUY signal filtered for ${symbol} - not aligned with trend (regime: ${currentRegime.regime})`);
+        return null;
+      }
+
+      if (isBearish && currentRegime.regime !== 'TRENDING_DOWN') {
+        console.log(`🚫 SELL signal filtered for ${symbol} - not aligned with trend (regime: ${currentRegime.regime})`);
+        return null;
+      }
+
+      console.log(`✅ Signal aligned with trend for ${symbol} (${currentRegime.regime}): ${recentPattern.pattern}`);
 
       if (isBullish) {
         return {

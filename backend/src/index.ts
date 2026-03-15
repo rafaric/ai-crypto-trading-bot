@@ -29,25 +29,33 @@ class InMemoryTradeRepository implements ITradeRepository {
   }
 }
 
-console.log('🚀 Starting AI Crypto Trading Bot...\n');
+console.log('🚀 Starting AI Crypto Trading Bot with Multi-Pair Support...\n');
+
+// Parse trading pairs from environment
+const tradingPairsEnv = process.env.TRADING_PAIRS || 'BTCUSDT,ETHUSDT,SOLUSDT';
+const tradingPairs = tradingPairsEnv.split(',').map(s => s.trim().toLowerCase());
+console.log(`📊 Configured trading pairs: ${tradingPairs.join(', ')}`);
 
 // Initialize core components
 const eventBus = new EventBus();
 const frontendGateway = new FrontendGateway(eventBus, 8081);
 
-// Initialize IndicatorEngine (the brain)
+// Initialize IndicatorEngine with multi-pair support
 const indicatorEngine = new IndicatorEngine(eventBus);
-console.log('✅ IndicatorEngine initialized - calculating EMA, VWAP, RSI, MACD, ATR, Patterns');
+console.log('✅ IndicatorEngine initialized - multi-pair support enabled');
+console.log('   Calculating EMA, VWAP, RSI, MACD, ATR, Patterns independently for each pair');
 
-// Initialize MarketRegimeDetector (Multi-Timeframe Analysis)
+// Initialize MarketRegimeDetector with multi-pair support
 const regimeDetector = new MarketRegimeDetector(eventBus);
-console.log('✅ MarketRegimeDetector initialized - listening to 1H regime updates (EMA200 + ADX)');
+console.log('✅ MarketRegimeDetector initialized - tracking regime per pair');
+console.log('   Listening to 1H regime updates with EMA200 + ADX for each pair');
 
-// Initialize PaperTradingEngine (simulated execution)
+// Initialize PaperTradingEngine with multi-pair support
 const tradeRepository = new InMemoryTradeRepository();
 const paperTradingEngine = new PaperTradingEngine(tradeRepository);
 paperTradingEngine.startListening(eventBus);
-console.log('✅ PaperTradingEngine initialized - ready to simulate trades\n');
+console.log('✅ PaperTradingEngine initialized - multi-pair execution enabled');
+console.log('   Max 3 concurrent trades across all pairs\n');
 
 // Initialize Telegram Service for notifications
 const telegramService = new TelegramService();
@@ -60,30 +68,45 @@ if (telegramConfigured) {
   console.log('📱 Telegram notifications enabled');
   if (!telegramWelcomeSent) {
     telegramWelcomeSent = true;
-    telegramService.sendMessage('🤖 <b>AI Crypto Trading Bot</b> iniciado\n\n✅ Conectado a Binance\n✅ Paper Trading activo\n✅ Listo para detectar señales');
+    telegramService.sendMessage(`🤖 <b>AI Crypto Trading Bot</b> iniciado
+
+✅ Multi-Pair Support activo
+✅ Pares: ${tradingPairs.map(p => p.toUpperCase()).join(', ')}
+✅ Paper Trading activo
+✅ Max 3 trades concurrentes
+✅ Listo para detectar señales`);
   }
 } else {
   console.log('⚠️  Telegram not configured - set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env');
 }
 
-// Subscribe to events to log activity
-let candleCount = 0;
-let signalCount = 0;
+// Subscribe to events to log activity per pair
+const candleCounts: Map<string, number> = new Map();
+const signalCounts: Map<string, number> = new Map();
 
 eventBus.subscribe<Candle>('candle_closed', (candle) => {
-  candleCount++;
-  process.stdout.write(`\r📊 Candles processed: ${candleCount} | Signals detected: ${signalCount}`);
+  const symbol = candle.symbol;
+  const currentCount = candleCounts.get(symbol) || 0;
+  candleCounts.set(symbol, currentCount + 1);
+  
+  const totalCandles = Array.from(candleCounts.values()).reduce((a, b) => a + b, 0);
+  const totalSignals = Array.from(signalCounts.values()).reduce((a, b) => a + b, 0);
+  
+  process.stdout.write(`\r📊 Total candles: ${totalCandles} | Total signals: ${totalSignals} | Active pairs: ${candleCounts.size}`);
 });
 
-eventBus.subscribe('indicators_updated', () => {
-  // Indicators calculated - this happens automatically
+eventBus.subscribe('indicators_updated', (event) => {
+  // Indicators calculated per pair - this happens automatically
+  // Could log per-pair indicator updates here if needed
 });
 
 eventBus.subscribe<SignalGenerated>('SignalGenerated', async (signal) => {
-  signalCount++;
+  const symbol = signal.symbol;
+  const currentCount = signalCounts.get(symbol) || 0;
+  signalCounts.set(symbol, currentCount + 1);
+  
   const emoji = signal.action === 'BUY' ? '🟢' : '🔴';
-  console.log(`\n${emoji} SIGNAL DETECTED!`);
-  console.log(`   Symbol: ${signal.symbol}`);
+  console.log(`\n${emoji} SIGNAL DETECTED for ${symbol}!`);
   console.log(`   Action: ${signal.action}`);
   console.log(`   Strategy: ${signal.strategy || 'Unknown'}`);
   console.log(`   Confidence: ${(signal.confidence * 100).toFixed(1)}%`);
@@ -93,18 +116,21 @@ eventBus.subscribe<SignalGenerated>('SignalGenerated', async (signal) => {
   await telegramService.sendSignalAlert(signal);
 });
 
-// Subscribe to market regime changes for logging
+// Subscribe to market regime changes for logging per pair
 eventBus.subscribe<MarketRegimeEvent>('market_regime_changed', (regime) => {
   const regimeEmoji = regime.regime === 'TRENDING_UP' ? '📈' :
                       regime.regime === 'TRENDING_DOWN' ? '📉' : '➡️';
-  console.log(`\n${regimeEmoji} MARKET REGIME CHANGE`);
+  console.log(`\n${regimeEmoji} MARKET REGIME CHANGE for ${regime.symbol}`);
   console.log(`   Regime: ${regime.regime}`);
   console.log(`   Direction: ${regime.trendDirection}`);
   console.log(`   Confidence: ${(regime.confidence * 100).toFixed(1)}%`);
+  console.log(`   EMA200: $${regime.ema200?.toFixed(2) || 'N/A'}`);
+  console.log(`   ADX14: ${regime.adx14?.toFixed(2) || 'N/A'}`);
 });
 
 // Track recent trades to prevent spam
-const recentTrades: Map<string, number> = new Map();
+type TradeKey = string;
+const recentTrades: Map<TradeKey, number> = new Map();
 const TRADE_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
 
 eventBus.subscribe<Trade>('trade_executed', async (trade) => {
@@ -115,7 +141,7 @@ eventBus.subscribe<Trade>('trade_executed', async (trade) => {
   console.log(`   Simulated: ${trade.simulated}`);
   
   // Check cooldown to prevent Telegram spam
-  const tradeKey = `${trade.symbol}-${trade.action}`;
+  const tradeKey: TradeKey = `${trade.symbol}-${trade.action}`;
   const lastTradeTime = recentTrades.get(tradeKey);
   const now = Date.now();
   
@@ -146,44 +172,54 @@ console.log('✅ All systems connected and running\n');
 let binanceWsClient: BinanceWsClient | null = null;
 let binanceRestClient1H: BinanceRestClient1H | null = null;
 
-// Parse trading pairs from environment
-const tradingPairsEnv = process.env.TRADING_PAIRS || 'BTCUSDT,ETHUSDT,SOLUSDT';
-const tradingPairs = tradingPairsEnv.split(',').map(s => s.trim().toLowerCase());
-console.log(`📊 Configured trading pairs: ${tradingPairs.join(', ')}`);
-
-// Fetch historical candles before connecting WebSocket
+// Fetch historical candles before connecting WebSocket for ALL pairs
 async function bootstrap(): Promise<void> {
-  // For now, fetch historical data only for the first pair
-  // Batch 2 will handle multi-pair historical fetching
-  console.log('📚 Loading historical 5m candles for indicator pre-calculation...');
+  console.log('📚 Loading historical 5m candles for all pairs...\n');
   
-  const restClient = new BinanceRestClient({
-    symbol: tradingPairs[0].toUpperCase(),
-    interval: '5m',
-    limit: 300,
+  // Fetch historical data for each pair in parallel
+  const historicalPromises = tradingPairs.map(async (pair, index) => {
+    const symbol = pair.toUpperCase();
+    console.log(`   [${index + 1}/${tradingPairs.length}] Loading ${symbol}...`);
+    
+    const restClient = new BinanceRestClient({
+      symbol: symbol,
+      interval: '5m',
+      limit: 300,
+    });
+
+    try {
+      const historicalCandles = await restClient.fetchWithProgress(
+        (current, total) => {
+          process.stdout.write(`\r   Loading ${symbol}: ${current}/${total}`);
+        }
+      );
+
+      console.log(`\r   ✅ ${symbol}: ${historicalCandles.length} candles loaded`);
+
+      // Publish all historical candles to pre-populate IndicatorEngine
+      for (const candle of historicalCandles) {
+        eventBus.publish('candle_closed', { ...candle, isHistorical: true });
+      }
+      
+      return { symbol, count: historicalCandles.length, success: true };
+    } catch (error) {
+      console.error(`\r   ❌ ${symbol}: Failed to load historical candles`, error);
+      return { symbol, count: 0, success: false };
+    }
   });
 
-  try {
-    const historicalCandles = await restClient.fetchWithProgress(
-      (current, total) => {
-        process.stdout.write(`\r   Loading ${total} historical 5m candles... ${current}/${total}`);
-      }
-    );
-
-    console.log('\n✅ Historical 5m candles loaded\n');
-
-    // Publish all historical candles to pre-populate IndicatorEngine
-    console.log('📤 Publishing historical candles to indicator engine...');
-    for (const candle of historicalCandles) {
-      eventBus.publish('candle_closed', candle);
-    }
-    console.log(`✅ Published ${historicalCandles.length} historical 5m candles\n`);
-  } catch (error) {
-    console.error('❌ Failed to load historical candles:', error);
-    console.log('⚠️  Continuing without historical data (indicators will need warm-up)\n');
+  const results = await Promise.all(historicalPromises);
+  
+  const successful = results.filter(r => r.success);
+  const failed = results.filter(r => !r.success);
+  
+  console.log(`\n✅ Historical data loaded: ${successful.length}/${tradingPairs.length} pairs`);
+  if (failed.length > 0) {
+    console.log(`⚠️  Failed pairs: ${failed.map(f => f.symbol).join(', ')}`);
+    console.log('   Continuing without historical data for those pairs (indicators will need warm-up)\n');
   }
 
-  // Initialize 1H REST client for macro trend analysis
+  // Initialize 1H REST client for macro trend analysis (all pairs)
   console.log('🔌 Initializing Binance REST Client for 1H macro trend analysis...');
   binanceRestClient1H = new BinanceRestClient1H(eventBus, {
     symbols: tradingPairs.map(p => p.toUpperCase()),
@@ -191,10 +227,11 @@ async function bootstrap(): Promise<void> {
     candleLimit: 200,
   });
   binanceRestClient1H.start();
-  console.log('✅ Binance REST Client (1H) initialized - polling every 60 minutes\n');
+  console.log('✅ Binance REST Client (1H) initialized - polling every 60 minutes for all pairs\n');
 
-  // Connect WebSocket for real-time 5m updates (regardless of whether historical fetch succeeded)
+  // Connect WebSocket for real-time 5m updates for ALL pairs
   console.log('🔌 Connecting to Binance WebSocket for real-time 5m data...');
+  console.log(`   Monitoring: ${tradingPairs.join(', ')}`);
   binanceWsClient = new BinanceWsClient(eventBus, tradingPairs, '5m');
   binanceWsClient.connect();
   console.log('✅ Connected to Binance WebSocket API (5m candles)\n');
@@ -208,6 +245,7 @@ process.on('SIGINT', () => {
   console.log('\n\n🛑 Shutting down gracefully...');
   indicatorEngine.unsubscribe();
   regimeDetector.unsubscribe();
+  paperTradingEngine.stopListening();
   frontendGateway.close();
   if (binanceWsClient) {
     binanceWsClient.close();

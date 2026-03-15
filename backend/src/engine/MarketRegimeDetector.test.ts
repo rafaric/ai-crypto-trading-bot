@@ -18,7 +18,141 @@ describe('MarketRegimeDetector', () => {
   describe('constructor', () => {
     it('should create detector with event bus', () => {
       expect(detector).toBeDefined();
-      expect(detector.getCurrentRegime()).toBeNull();
+      expect(detector.getCurrentRegime('BTCUSDT')).toBeNull();
+    });
+  });
+
+  describe('Multi-Pair Support', () => {
+    it('should track regimes independently for each pair', () => {
+      // Set regime for BTC
+      eventBus.publish('market_regime_1h_updated', {
+        symbol: 'BTCUSDT',
+        regime: 'TRENDING_UP',
+        trendDirection: 'BULLISH',
+        confidence: 0.75,
+        timestamp: Date.now(),
+        ema200: 50000,
+        adx14: 30,
+        price: 51000,
+      });
+
+      // Set different regime for ETH
+      eventBus.publish('market_regime_1h_updated', {
+        symbol: 'ETHUSDT',
+        regime: 'TRENDING_DOWN',
+        trendDirection: 'BEARISH',
+        confidence: 0.65,
+        timestamp: Date.now(),
+        ema200: 3000,
+        adx14: 25,
+        price: 2900,
+      });
+
+      const btcRegime = detector.getCurrentRegime('BTCUSDT');
+      const ethRegime = detector.getCurrentRegime('ETHUSDT');
+
+      expect(btcRegime?.regime).toBe('TRENDING_UP');
+      expect(ethRegime?.regime).toBe('TRENDING_DOWN');
+      expect(btcRegime?.trendDirection).toBe('BULLISH');
+      expect(ethRegime?.trendDirection).toBe('BEARISH');
+    });
+
+    it('should return null for unknown pairs', () => {
+      expect(detector.getCurrentRegime('UNKNOWNPAIR')).toBeNull();
+    });
+
+    it('should get all regimes', () => {
+      eventBus.publish('market_regime_1h_updated', {
+        symbol: 'BTCUSDT',
+        regime: 'TRENDING_UP',
+        trendDirection: 'BULLISH',
+        confidence: 0.75,
+        timestamp: Date.now(),
+        ema200: 50000,
+        adx14: 30,
+        price: 51000,
+      });
+
+      eventBus.publish('market_regime_1h_updated', {
+        symbol: 'ETHUSDT',
+        regime: 'RANGING',
+        trendDirection: 'NEUTRAL',
+        confidence: 0.5,
+        timestamp: Date.now(),
+        ema200: 3000,
+        adx14: 15,
+        price: 3000,
+      });
+
+      const allRegimes = detector.getAllRegimes();
+      
+      expect(allRegimes.size).toBe(2);
+      expect(allRegimes.has('BTCUSDT')).toBe(true);
+      expect(allRegimes.has('ETHUSDT')).toBe(true);
+    });
+
+    it('should emit market_regime_changed with pair symbol', () => {
+      const eventHandler = jest.fn();
+      eventBus.subscribe<MarketRegimeEvent>('market_regime_changed', eventHandler);
+
+      eventBus.publish('market_regime_1h_updated', {
+        symbol: 'SOLUSDT',
+        regime: 'TRENDING_UP',
+        trendDirection: 'BULLISH',
+        confidence: 0.8,
+        timestamp: Date.now(),
+        ema200: 100,
+        adx14: 28,
+        price: 105,
+      });
+
+      expect(eventHandler).toHaveBeenCalledTimes(1);
+      expect(eventHandler.mock.calls[0][0].symbol).toBe('SOLUSDT');
+      expect(eventHandler.mock.calls[0][0].regime).toBe('TRENDING_UP');
+    });
+
+    it('should handle regime updates for multiple pairs independently', () => {
+      const eventHandler = jest.fn();
+      eventBus.subscribe<MarketRegimeEvent>('market_regime_changed', eventHandler);
+
+      // First update for BTC
+      eventBus.publish('market_regime_1h_updated', {
+        symbol: 'BTCUSDT',
+        regime: 'TRENDING_UP',
+        trendDirection: 'BULLISH',
+        confidence: 0.75,
+        timestamp: Date.now(),
+        ema200: 50000,
+        adx14: 30,
+        price: 51000,
+      });
+
+      // First update for ETH (different pair - should emit)
+      eventBus.publish('market_regime_1h_updated', {
+        symbol: 'ETHUSDT',
+        regime: 'TRENDING_DOWN',
+        trendDirection: 'BEARISH',
+        confidence: 0.65,
+        timestamp: Date.now(),
+        ema200: 3000,
+        adx14: 25,
+        price: 2900,
+      });
+
+      // Same regime for BTC (should not emit)
+      eventBus.publish('market_regime_1h_updated', {
+        symbol: 'BTCUSDT',
+        regime: 'TRENDING_UP',
+        trendDirection: 'BULLISH',
+        confidence: 0.80, // Different confidence
+        timestamp: Date.now(),
+        ema200: 50500,
+        adx14: 32,
+        price: 51500,
+      });
+
+      // Should have 2 events (one for each pair, BTC only emitted once)
+      expect(eventHandler).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -37,7 +171,7 @@ describe('MarketRegimeDetector', () => {
 
       eventBus.publish('market_regime_1h_updated', regimeEvent);
 
-      const currentRegime = detector.getCurrentRegime();
+      const currentRegime = detector.getCurrentRegime('BTCUSDT');
       expect(currentRegime).not.toBeNull();
       expect(currentRegime?.regime).toBe('TRENDING_UP');
       expect(currentRegime?.trendDirection).toBe('BULLISH');
@@ -89,6 +223,7 @@ describe('MarketRegimeDetector', () => {
 
       // First: TRENDING_UP
       eventBus.publish('market_regime_1h_updated', {
+        symbol: 'BTCUSDT',
         regime: 'TRENDING_UP',
         trendDirection: 'BULLISH',
         confidence: 0.75,
@@ -102,6 +237,7 @@ describe('MarketRegimeDetector', () => {
 
       // Then: TRENDING_DOWN
       eventBus.publish('market_regime_1h_updated', {
+        symbol: 'BTCUSDT',
         regime: 'TRENDING_DOWN',
         trendDirection: 'BEARISH',
         confidence: 0.65,
@@ -120,6 +256,7 @@ describe('MarketRegimeDetector', () => {
       eventBus.subscribe<MarketRegimeEvent>('market_regime_changed', eventHandler);
 
       eventBus.publish('market_regime_1h_updated', {
+        symbol: 'BTCUSDT',
         regime: 'RANGING',
         trendDirection: 'NEUTRAL',
         confidence: 0.50,
@@ -129,9 +266,30 @@ describe('MarketRegimeDetector', () => {
         price: 50050,
       });
 
-      const currentRegime = detector.getCurrentRegime();
+      const currentRegime = detector.getCurrentRegime('BTCUSDT');
       expect(currentRegime?.regime).toBe('RANGING');
       expect(currentRegime?.trendDirection).toBe('NEUTRAL');
+    });
+
+    it('should include EMA200 and ADX14 values in regime event', () => {
+      const eventHandler = jest.fn();
+      eventBus.subscribe<MarketRegimeEvent>('market_regime_changed', eventHandler);
+
+      eventBus.publish('market_regime_1h_updated', {
+        symbol: 'BTCUSDT',
+        regime: 'TRENDING_UP',
+        trendDirection: 'BULLISH',
+        confidence: 0.75,
+        timestamp: Date.now(),
+        ema200: 50000,
+        adx14: 30,
+        price: 51000,
+      });
+
+      const emittedEvent = eventHandler.mock.calls[0][0];
+      expect(emittedEvent.ema200).toBe(50000);
+      expect(emittedEvent.adx14).toBe(30);
+      expect(emittedEvent.price).toBe(51000);
     });
   });
 
@@ -142,6 +300,7 @@ describe('MarketRegimeDetector', () => {
 
       // First event
       eventBus.publish('market_regime_1h_updated', {
+        symbol: 'BTCUSDT',
         regime: 'TRENDING_UP',
         trendDirection: 'BULLISH',
         confidence: 0.75,
@@ -158,6 +317,7 @@ describe('MarketRegimeDetector', () => {
 
       // Second event - should not be processed
       eventBus.publish('market_regime_1h_updated', {
+        symbol: 'BTCUSDT',
         regime: 'TRENDING_DOWN',
         trendDirection: 'BEARISH',
         confidence: 0.65,
@@ -171,20 +331,20 @@ describe('MarketRegimeDetector', () => {
       expect(eventHandler).toHaveBeenCalledTimes(1);
       
       // Regime should remain unchanged
-      expect(detector.getCurrentRegime()?.regime).toBe('TRENDING_UP');
+      expect(detector.getCurrentRegime('BTCUSDT')?.regime).toBe('TRENDING_UP');
     });
 
     it('should handle multiple unsubscribe calls safely', () => {
       detector.unsubscribe();
       detector.unsubscribe(); // Should not throw
       
-      expect(detector.getCurrentRegime()).toBeNull();
+      expect(detector.getCurrentRegime('BTCUSDT')).toBeNull();
     });
   });
 
   describe('edge cases', () => {
     it('should handle initial null regime gracefully', () => {
-      expect(detector.getCurrentRegime()).toBeNull();
+      expect(detector.getCurrentRegime('BTCUSDT')).toBeNull();
     });
 
     it('should not emit event if regime is same as current', () => {
@@ -193,6 +353,7 @@ describe('MarketRegimeDetector', () => {
 
       // Set initial regime
       eventBus.publish('market_regime_1h_updated', {
+        symbol: 'BTCUSDT',
         regime: 'TRENDING_UP',
         trendDirection: 'BULLISH',
         confidence: 0.75,
@@ -206,6 +367,7 @@ describe('MarketRegimeDetector', () => {
 
       // Publish same regime again
       eventBus.publish('market_regime_1h_updated', {
+        symbol: 'BTCUSDT',
         regime: 'TRENDING_UP',
         trendDirection: 'BULLISH',
         confidence: 0.76, // Slight difference
@@ -217,6 +379,37 @@ describe('MarketRegimeDetector', () => {
 
       // Should not emit again
       expect(eventHandler).toHaveBeenCalledTimes(1);
+    });
+
+    it('should update confidence even when regime stays the same', () => {
+      // Set initial regime
+      eventBus.publish('market_regime_1h_updated', {
+        symbol: 'BTCUSDT',
+        regime: 'TRENDING_UP',
+        trendDirection: 'BULLISH',
+        confidence: 0.75,
+        timestamp: Date.now(),
+        ema200: 50000,
+        adx14: 30,
+        price: 51000,
+      });
+
+      // Update with different confidence
+      eventBus.publish('market_regime_1h_updated', {
+        symbol: 'BTCUSDT',
+        regime: 'TRENDING_UP',
+        trendDirection: 'BULLISH',
+        confidence: 0.85, // Higher confidence
+        timestamp: Date.now(),
+        ema200: 50200,
+        adx14: 35,
+        price: 51200,
+      });
+
+      const currentRegime = detector.getCurrentRegime('BTCUSDT');
+      expect(currentRegime?.confidence).toBe(0.85);
+      expect(currentRegime?.ema200).toBe(50200);
+      expect(currentRegime?.adx14).toBe(35);
     });
   });
 });
