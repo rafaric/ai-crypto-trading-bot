@@ -132,6 +132,12 @@ export class IndicatorEngine {
     const indicators = this.calculateAllIndicators();
 
     // Emit indicators_updated event
+    console.log('📤 Sending indicators:', {
+      emaSeries: indicators.ema.series?.length,
+      vwapSeries: indicators.vwap.series?.length,
+      emaValue: indicators.ema.value,
+      vwapValue: indicators.vwap.value,
+    });
     this.eventBus.publish<IndicatorsUpdatedEvent>('indicators_updated', {
       symbol: candle.symbol,
       indicators,

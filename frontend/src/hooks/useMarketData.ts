@@ -1,9 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
 import type { MarketTick, SignalGenerated } from '../../../shared/src/events';
 
+export interface IndicatorSeries {
+  timestamp: number;
+  value: number;
+}
+
 export interface IndicatorData {
-  ema: { value: number | null; period: number };
-  vwap: { value: number | null; period: number };
+  ema: { value: number | null; series: IndicatorSeries[]; period: number };
+  vwap: { value: number | null; series: IndicatorSeries[]; period: number };
   rsi: { value: number | null; signal: string | null; period: number };
   macd: { macd: number | null; signal: number | null; histogram: number | null };
   atr: { value: number | null; period: number };
@@ -116,6 +121,12 @@ export function useMarketData() {
               break;
 
             case 'indicators_updated':
+              console.log('📥 Received indicators:', {
+                emaSeries: message.payload.indicators?.ema?.series?.length,
+                vwapSeries: message.payload.indicators?.vwap?.series?.length,
+                emaValue: message.payload.indicators?.ema?.value,
+                vwapValue: message.payload.indicators?.vwap?.value,
+              });
               setIndicators(message.payload);
               break;
 

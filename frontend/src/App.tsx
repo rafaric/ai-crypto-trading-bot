@@ -27,7 +27,9 @@ function App() {
             candles={ticks} 
             indicators={{
               ema: indicators?.indicators.ema?.value,
-              vwap: indicators?.indicators.vwap?.value
+              emaSeries: indicators?.indicators.ema?.series,
+              vwap: indicators?.indicators.vwap?.value,
+              vwapSeries: indicators?.indicators.vwap?.series
             }}
           />
           

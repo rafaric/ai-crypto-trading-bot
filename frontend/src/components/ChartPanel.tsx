@@ -17,6 +17,14 @@ export function ChartPanel({ candles, indicators }: ChartPanelProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    console.log('🎨 ChartPanel received:', {
+      candles: candles.length,
+      emaSeries: indicators?.emaSeries?.length,
+      vwapSeries: indicators?.vwapSeries?.length,
+      emaValue: indicators?.ema,
+      vwapValue: indicators?.vwap,
+    });
+    
     if (!chartContainerRef.current || candles.length === 0) return;
 
     // Deduplicate candles by timestamp and sort
