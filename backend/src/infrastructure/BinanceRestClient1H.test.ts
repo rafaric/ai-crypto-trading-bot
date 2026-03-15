@@ -21,25 +21,39 @@ describe('BinanceRestClient1H', () => {
   });
 
   describe('constructor', () => {
-    it('should create client with valid config', () => {
+    it('should create client with single symbol in array', () => {
       client = new BinanceRestClient1H(eventBus, {
-        symbol: 'BTCUSDT',
+        symbols: ['BTCUSDT'],
+      });
+      expect(client).toBeDefined();
+    });
+
+    it('should create client with multiple symbols', () => {
+      client = new BinanceRestClient1H(eventBus, {
+        symbols: ['BTCUSDT', 'ETHUSDT', 'SOLUSDT'],
       });
       expect(client).toBeDefined();
     });
 
     it('should use default values when not provided', () => {
       client = new BinanceRestClient1H(eventBus, {
-        symbol: 'BTCUSDT',
+        symbols: ['BTCUSDT'],
       });
       expect(client).toBeDefined();
     });
 
     it('should accept custom polling interval and limit', () => {
       client = new BinanceRestClient1H(eventBus, {
-        symbol: 'ETHUSDT',
+        symbols: ['BTCUSDT', 'ETHUSDT'],
         pollingIntervalMinutes: 30,
         candleLimit: 100,
+      });
+      expect(client).toBeDefined();
+    });
+
+    it('should normalize symbols to uppercase', () => {
+      client = new BinanceRestClient1H(eventBus, {
+        symbols: ['btcusdt', 'ethusdt'],
       });
       expect(client).toBeDefined();
     });
@@ -48,7 +62,7 @@ describe('BinanceRestClient1H', () => {
   describe('start/stop', () => {
     it('should start polling when start() is called', () => {
       client = new BinanceRestClient1H(eventBus, {
-        symbol: 'BTCUSDT',
+        symbols: ['BTCUSDT'],
         pollingIntervalMinutes: 60,
       });
 
@@ -67,7 +81,7 @@ describe('BinanceRestClient1H', () => {
 
     it('should stop polling when stop() is called', async () => {
       client = new BinanceRestClient1H(eventBus, {
-        symbol: 'BTCUSDT',
+        symbols: ['BTCUSDT'],
         pollingIntervalMinutes: 60,
       });
 
@@ -96,7 +110,7 @@ describe('BinanceRestClient1H', () => {
 
     it('should fetch immediately when start() is called', async () => {
       client = new BinanceRestClient1H(eventBus, {
-        symbol: 'BTCUSDT',
+        symbols: ['BTCUSDT'],
       });
 
       const mockKlines = createMockKlines(200);
@@ -116,31 +130,68 @@ describe('BinanceRestClient1H', () => {
     });
   });
 
-  describe('fetchHistoricalCandles', () => {
-    it('should fetch 1H candles from Binance API', async () => {
+  describe('batch fetching', () => {
+    it('should fetch candles for multiple symbols in parallel', async () => {
       client = new BinanceRestClient1H(eventBus, {
-        symbol: 'BTCUSDT',
+        symbols: ['BTCUSDT', 'ETHUSDT'],
+        candleLimit: 200,
+      });
+
+      const mockBtcKlines = createMockKlines(200);
+      const mockEthKlines = createMockKlines(200);
+      
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: jest.fn().mockResolvedValue(mockBtcKlines),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: jest.fn().mockResolvedValue(mockEthKlines),
+        });
+
+      client.start();
+      
+      // Allow async operations to complete
+      await jest.advanceTimersByTimeAsync(0);
+      
+      // Should fetch both symbols
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        1,
+        expect.stringContaining('symbol=BTCUSDT')
+      );
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        2,
+        expect.stringContaining('symbol=ETHUSDT')
+      );
+    });
+
+    it('should fetch candles for all three default pairs', async () => {
+      client = new BinanceRestClient1H(eventBus, {
+        symbols: ['BTCUSDT', 'ETHUSDT', 'SOLUSDT'],
         candleLimit: 200,
       });
 
       const mockKlines = createMockKlines(200);
+      
       mockFetch.mockResolvedValue({
         ok: true,
         json: jest.fn().mockResolvedValue(mockKlines),
       });
 
-      // Access private method through any cast for testing
-      const candles = await (client as any).fetchHistoricalCandles();
-
-      expect(mockFetch).toHaveBeenCalledWith(
-        'https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1h&limit=200'
-      );
-      expect(candles).toHaveLength(200);
+      client.start();
+      
+      // Allow async operations to complete
+      await jest.advanceTimersByTimeAsync(0);
+      
+      // Should fetch all three symbols
+      expect(mockFetch).toHaveBeenCalledTimes(3);
     });
 
     it('should handle API errors with exponential backoff', async () => {
       client = new BinanceRestClient1H(eventBus, {
-        symbol: 'BTCUSDT',
+        symbols: ['BTCUSDT'],
       });
 
       const mockKlines = createMockKlines(200);
@@ -166,7 +217,7 @@ describe('BinanceRestClient1H', () => {
 
     it('should throw error on non-ok response', async () => {
       client = new BinanceRestClient1H(eventBus, {
-        symbol: 'BTCUSDT',
+        symbols: ['BTCUSDT'],
       });
 
       mockFetch.mockResolvedValue({
@@ -175,7 +226,7 @@ describe('BinanceRestClient1H', () => {
         text: jest.fn().mockResolvedValue('Bad Request'),
       });
 
-      await expect((client as any).fetchHistoricalCandles()).rejects.toThrow(
+      await expect((client as any).fetchSymbolCandles('BTCUSDT')).rejects.toThrow(
         'Binance API error'
       );
     });
@@ -184,13 +235,13 @@ describe('BinanceRestClient1H', () => {
   describe('calculateRegime', () => {
     it('should calculate TRENDING_UP when ADX > 25 and price > EMA200', () => {
       client = new BinanceRestClient1H(eventBus, {
-        symbol: 'BTCUSDT',
+        symbols: ['BTCUSDT'],
       });
 
       // Create candles in strong uptrend
       const candles = createTrendingCandles('up', 200);
       
-      const regime = (client as any).calculateRegime(candles);
+      const regime = (client as any).calculateRegime('BTCUSDT', candles);
 
       expect(regime.regime).toBe('TRENDING_UP');
       expect(regime.trendDirection).toBe('BULLISH');
@@ -199,31 +250,33 @@ describe('BinanceRestClient1H', () => {
       expect(regime.ema200).toBeDefined();
       expect(regime.adx14).toBeDefined();
       expect(regime.price).toBeDefined();
+      expect(regime.symbol).toBe('BTCUSDT');
     });
 
     it('should calculate TRENDING_DOWN when ADX > 25 and price < EMA200', () => {
       client = new BinanceRestClient1H(eventBus, {
-        symbol: 'BTCUSDT',
+        symbols: ['BTCUSDT'],
       });
 
       // Create candles in strong downtrend
       const candles = createTrendingCandles('down', 200);
       
-      const regime = (client as any).calculateRegime(candles);
+      const regime = (client as any).calculateRegime('BTCUSDT', candles);
 
       expect(regime.regime).toBe('TRENDING_DOWN');
       expect(regime.trendDirection).toBe('BEARISH');
+      expect(regime.symbol).toBe('BTCUSDT');
     });
 
     it('should calculate regime with valid values', () => {
       client = new BinanceRestClient1H(eventBus, {
-        symbol: 'BTCUSDT',
+        symbols: ['BTCUSDT'],
       });
 
       // Create candles in ranging market (sideways)
       const candles = createRangingCandles(200);
       
-      const regime = (client as any).calculateRegime(candles);
+      const regime = (client as any).calculateRegime('BTCUSDT', candles);
 
       // Verify regime is one of the valid values
       expect(['TRENDING_UP', 'TRENDING_DOWN', 'RANGING']).toContain(regime.regime);
@@ -233,13 +286,32 @@ describe('BinanceRestClient1H', () => {
       expect(regime.ema200).toBeDefined();
       expect(regime.adx14).toBeDefined();
       expect(regime.price).toBeDefined();
+      expect(regime.symbol).toBe('BTCUSDT');
+    });
+
+    it('should calculate regime separately for each symbol', () => {
+      client = new BinanceRestClient1H(eventBus, {
+        symbols: ['BTCUSDT', 'ETHUSDT'],
+      });
+
+      const btcCandles = createTrendingCandles('up', 200);
+      const ethCandles = createTrendingCandles('down', 200);
+      
+      const btcRegime = (client as any).calculateRegime('BTCUSDT', btcCandles);
+      const ethRegime = (client as any).calculateRegime('ETHUSDT', ethCandles);
+
+      expect(btcRegime.symbol).toBe('BTCUSDT');
+      expect(btcRegime.regime).toBe('TRENDING_UP');
+      
+      expect(ethRegime.symbol).toBe('ETHUSDT');
+      expect(ethRegime.regime).toBe('TRENDING_DOWN');
     });
   });
 
   describe('event emission', () => {
     it('should emit market_regime_1h_updated event after calculation', async () => {
       client = new BinanceRestClient1H(eventBus, {
-        symbol: 'BTCUSDT',
+        symbols: ['BTCUSDT'],
       });
 
       const mockKlines = createMockKlines(200);
@@ -256,12 +328,38 @@ describe('BinanceRestClient1H', () => {
 
       expect(eventHandler).toHaveBeenCalled();
       const event = eventHandler.mock.calls[0][0];
+      expect(event).toHaveProperty('symbol');
       expect(event).toHaveProperty('regime');
       expect(event).toHaveProperty('trendDirection');
       expect(event).toHaveProperty('confidence');
       expect(event).toHaveProperty('ema200');
       expect(event).toHaveProperty('adx14');
       expect(event).toHaveProperty('price');
+    });
+
+    it('should emit events for all symbols', async () => {
+      client = new BinanceRestClient1H(eventBus, {
+        symbols: ['BTCUSDT', 'ETHUSDT'],
+      });
+
+      const mockKlines = createMockKlines(200);
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue(mockKlines),
+      });
+
+      const eventHandler = jest.fn();
+      eventBus.subscribe<MarketRegime1HUpdated>('market_regime_1h_updated', eventHandler);
+
+      client.start();
+      await jest.advanceTimersByTimeAsync(0);
+
+      // Should emit one event per symbol
+      expect(eventHandler).toHaveBeenCalledTimes(2);
+      
+      const symbols = eventHandler.mock.calls.map(call => call[0].symbol);
+      expect(symbols).toContain('BTCUSDT');
+      expect(symbols).toContain('ETHUSDT');
     });
   });
 });

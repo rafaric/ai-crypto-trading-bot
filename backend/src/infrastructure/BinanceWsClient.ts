@@ -5,6 +5,7 @@ import { Candle } from '../domain/MarketTick';
 /**
  * Binance WebSocket Client
  * Connects to Binance WebSocket API for real-time candle data
+ * Supports multiple trading pairs via combined stream
  * No authentication required for public streams
  */
 export class BinanceWsClient {
@@ -14,11 +15,11 @@ export class BinanceWsClient {
   private isClosed = false;
   private readonly maxReconnectDelay = 60000;
   private readonly baseReconnectDelay = 1000;
-  private currentCandle: Candle | null = null;
+  private currentCandles: Map<string, Candle> = new Map();
 
   constructor(
     private eventBus: EventBus,
-    private symbol: string = 'btcusdt',
+    private symbols: string[] = ['btcusdt'],
     private interval: string = '5m'
   ) {}
 
@@ -27,10 +28,11 @@ export class BinanceWsClient {
       return;
     }
 
-    // Binance WebSocket URL for kline/candle data (public, no auth needed)
-    const wsUrl = `wss://stream.binance.com:9443/ws/${this.symbol}@kline_${this.interval}`;
+    // Binance combined stream URL for multiple pairs
+    const streamNames = this.symbols.map(s => `${s.toLowerCase()}@kline_${this.interval}`).join('/');
+    const wsUrl = `wss://stream.binance.com:9443/ws/${streamNames}`;
 
-    console.log(`🔌 Connecting to Binance WebSocket: ${this.symbol}@kline_${this.interval}`);
+    console.log(`🔌 Connecting to Binance WebSocket: ${this.symbols.length} pairs @ ${this.interval}`);
 
     try {
       this.ws = new WebSocket(wsUrl);
@@ -53,12 +55,16 @@ export class BinanceWsClient {
     try {
       const parsed = JSON.parse(data.toString());
 
-      // Binance kline format: { e: 'kline', E: timestamp, s: 'BTCUSDT', k: {...} }
-      if (parsed.e === 'kline' && parsed.k) {
-        const kline = parsed.k;
+      // Binance combined stream format: { stream: 'btcusdt@kline_5m', data: { e: 'kline', ... } }
+      // Or single stream format: { e: 'kline', E: timestamp, s: 'BTCUSDT', k: {...} }
+      const eventData = parsed.data || parsed;
+      
+      if (eventData.e === 'kline' && eventData.k) {
+        const kline = eventData.k;
+        const symbol = eventData.s || parsed.stream?.split('@')[0]?.toUpperCase() || 'UNKNOWN';
         
         const candle: Candle = {
-          symbol: parsed.s || this.symbol.toUpperCase(),
+          symbol: symbol,
           open: parseFloat(kline.o),
           high: parseFloat(kline.h),
           low: parseFloat(kline.l),
@@ -69,8 +75,8 @@ export class BinanceWsClient {
           interval: kline.i,
         };
 
-        // Track current candle for real-time updates
-        this.currentCandle = candle;
+        // Track current candle for real-time updates per symbol
+        this.currentCandles.set(candle.symbol, candle);
 
         // Emit only when candle closes (isClosed: true)
         if (candle.isClosed) {
@@ -121,8 +127,16 @@ export class BinanceWsClient {
     }, delay);
   }
 
-  public getCurrentCandle(): Candle | null {
-    return this.currentCandle;
+  public getCurrentCandle(symbol?: string): Candle | null {
+    if (symbol) {
+      return this.currentCandles.get(symbol.toUpperCase()) || null;
+    }
+    // Return first available candle if no symbol specified
+    return this.currentCandles.values().next().value || null;
+  }
+
+  public getCurrentCandles(): Map<string, Candle> {
+    return new Map(this.currentCandles);
   }
 
   public close(): void {

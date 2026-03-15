@@ -25,6 +25,7 @@ describe('MarketRegimeDetector', () => {
   describe('1H regime event handling', () => {
     it('should update regime when market_regime_1h_updated event is received', () => {
       const regimeEvent: MarketRegime1HUpdated = {
+        symbol: 'BTCUSDT',
         regime: 'TRENDING_UP',
         trendDirection: 'BULLISH',
         confidence: 0.75,
@@ -49,6 +50,7 @@ describe('MarketRegimeDetector', () => {
 
       // First regime event
       const regimeEvent1: MarketRegime1HUpdated = {
+        symbol: 'BTCUSDT',
         regime: 'TRENDING_UP',
         trendDirection: 'BULLISH',
         confidence: 0.75,
@@ -65,6 +67,7 @@ describe('MarketRegimeDetector', () => {
 
       // Same regime - should not emit again
       const regimeEvent2: MarketRegime1HUpdated = {
+        symbol: 'BTCUSDT',
         regime: 'TRENDING_UP',
         trendDirection: 'BULLISH',
         confidence: 0.80, // Different confidence, same regime

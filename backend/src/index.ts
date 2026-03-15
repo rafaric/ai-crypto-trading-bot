@@ -146,12 +146,19 @@ console.log('✅ All systems connected and running\n');
 let binanceWsClient: BinanceWsClient | null = null;
 let binanceRestClient1H: BinanceRestClient1H | null = null;
 
+// Parse trading pairs from environment
+const tradingPairsEnv = process.env.TRADING_PAIRS || 'BTCUSDT,ETHUSDT,SOLUSDT';
+const tradingPairs = tradingPairsEnv.split(',').map(s => s.trim().toLowerCase());
+console.log(`📊 Configured trading pairs: ${tradingPairs.join(', ')}`);
+
 // Fetch historical candles before connecting WebSocket
 async function bootstrap(): Promise<void> {
+  // For now, fetch historical data only for the first pair
+  // Batch 2 will handle multi-pair historical fetching
   console.log('📚 Loading historical 5m candles for indicator pre-calculation...');
   
   const restClient = new BinanceRestClient({
-    symbol: 'BTCUSDT',
+    symbol: tradingPairs[0].toUpperCase(),
     interval: '5m',
     limit: 300,
   });
@@ -179,7 +186,7 @@ async function bootstrap(): Promise<void> {
   // Initialize 1H REST client for macro trend analysis
   console.log('🔌 Initializing Binance REST Client for 1H macro trend analysis...');
   binanceRestClient1H = new BinanceRestClient1H(eventBus, {
-    symbol: 'BTCUSDT',
+    symbols: tradingPairs.map(p => p.toUpperCase()),
     pollingIntervalMinutes: 60,
     candleLimit: 200,
   });
@@ -188,7 +195,7 @@ async function bootstrap(): Promise<void> {
 
   // Connect WebSocket for real-time 5m updates (regardless of whether historical fetch succeeded)
   console.log('🔌 Connecting to Binance WebSocket for real-time 5m data...');
-  binanceWsClient = new BinanceWsClient(eventBus, 'btcusdt', '5m');
+  binanceWsClient = new BinanceWsClient(eventBus, tradingPairs, '5m');
   binanceWsClient.connect();
   console.log('✅ Connected to Binance WebSocket API (5m candles)\n');
 }

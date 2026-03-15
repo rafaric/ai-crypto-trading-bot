@@ -4,21 +4,27 @@ import { EMA } from '../indicators/EMA';
 import { ADX } from '../indicators/ADX';
 
 export interface BinanceRestClient1HConfig {
-  symbol: string;
+  symbols: string[];
   pollingIntervalMinutes?: number;
   candleLimit?: number;
 }
 
+export interface SymbolCandles {
+  symbol: string;
+  candles: Candle[];
+}
+
 /**
  * Binance REST Client for 1H timeframe data
+ * Supports multiple trading pairs - fetches all in parallel
  * Polls Binance API every 60 minutes (configurable)
- * Calculates EMA200 and ADX14 for macro trend analysis
- * Emits market_regime_1h_updated events
+ * Calculates EMA200 and ADX14 for macro trend analysis per symbol
+ * Emits market_regime_1h_updated events for each symbol
  */
 export class BinanceRestClient1H {
   private readonly baseUrl = 'https://api.binance.com';
   private readonly eventBus: EventBus;
-  private readonly symbol: string;
+  private readonly symbols: string[];
   private readonly pollingIntervalMs: number;
   private readonly candleLimit: number;
   private pollingTimer: ReturnType<typeof setInterval> | null = null;
@@ -27,19 +33,21 @@ export class BinanceRestClient1H {
   private readonly maxRetryDelay = 60000;
   private readonly baseRetryDelay = 1000;
 
-  // Indicators for regime calculation
-  private ema: EMA;
-  private adx: ADX;
+  // Indicators per symbol for regime calculation
+  private emaIndicators: Map<string, EMA> = new Map();
+  private adxIndicators: Map<string, ADX> = new Map();
 
   constructor(eventBus: EventBus, config: BinanceRestClient1HConfig) {
     this.eventBus = eventBus;
-    this.symbol = config.symbol.toUpperCase();
+    this.symbols = config.symbols.map(s => s.toUpperCase());
     this.pollingIntervalMs = (config.pollingIntervalMinutes || 60) * 60 * 1000;
     this.candleLimit = config.candleLimit || 200;
 
-    // Initialize indicators
-    this.ema = new EMA(200);
-    this.adx = new ADX(14);
+    // Initialize indicators for each symbol
+    for (const symbol of this.symbols) {
+      this.emaIndicators.set(symbol, new EMA(200));
+      this.adxIndicators.set(symbol, new ADX(14));
+    }
   }
 
   /**
@@ -53,7 +61,7 @@ export class BinanceRestClient1H {
     }
 
     this.isRunning = true;
-    console.log(`🚀 BinanceRestClient1H started - polling ${this.symbol} 1H candles every ${this.pollingIntervalMs / 60000} minutes`);
+    console.log(`🚀 BinanceRestClient1H started - polling ${this.symbols.length} symbols 1H candles every ${this.pollingIntervalMs / 60000} minutes`);
 
     // Fetch immediately on start
     this.fetchAndCalculate();
@@ -79,22 +87,24 @@ export class BinanceRestClient1H {
   }
 
   /**
-   * Fetch 1H candles and calculate regime
+   * Fetch 1H candles for all symbols and calculate regime
    * Private - called by start() and polling timer
    */
   private async fetchAndCalculate(): Promise<void> {
     try {
-      console.log(`📊 Fetching ${this.candleLimit} 1H candles for ${this.symbol}...`);
+      console.log(`📊 Fetching ${this.candleLimit} 1H candles for ${this.symbols.length} symbols...`);
       
-      const candles = await this.fetchHistoricalCandles();
-      console.log(`✅ Fetched ${candles.length} 1H candles`);
+      const results = await this.fetchAllSymbols();
+      console.log(`✅ Fetched 1H candles for ${results.size} symbols`);
 
-      const regime = this.calculateRegime(candles);
-      
-      console.log(`📊 1H Regime: ${regime.regime} (${regime.trendDirection}) - EMA200: ${regime.ema200.toFixed(2)}, ADX14: ${regime.adx14.toFixed(2)}`);
-
-      // Emit regime event
-      this.eventBus.publish<MarketRegime1HUpdated>('market_regime_1h_updated', regime);
+      // Calculate and emit regime for each symbol
+      for (const [symbol, candles] of results) {
+        const regime = this.calculateRegime(symbol, candles);
+        console.log(`📊 1H Regime [${symbol}]: ${regime.regime} (${regime.trendDirection}) - EMA200: ${regime.ema200.toFixed(2)}, ADX14: ${regime.adx14.toFixed(2)}`);
+        
+        // Emit regime event with symbol
+        this.eventBus.publish<MarketRegime1HUpdated>('market_regime_1h_updated', regime);
+      }
 
       // Reset retry attempts on success
       this.retryAttempts = 0;
@@ -105,10 +115,24 @@ export class BinanceRestClient1H {
   }
 
   /**
-   * Fetch historical 1H candles from Binance REST API
+   * Fetch historical 1H candles from Binance REST API for all symbols in parallel
    */
-  private async fetchHistoricalCandles(): Promise<Candle[]> {
-    const url = `${this.baseUrl}/api/v3/klines?symbol=${this.symbol}&interval=1h&limit=${this.candleLimit}`;
+  private async fetchAllSymbols(): Promise<Map<string, Candle[]>> {
+    const promises = this.symbols.map(symbol => this.fetchSymbolCandles(symbol));
+    const results = await Promise.all(promises);
+    
+    const candlesMap = new Map<string, Candle[]>();
+    for (const result of results) {
+      candlesMap.set(result.symbol, result.candles);
+    }
+    return candlesMap;
+  }
+
+  /**
+   * Fetch historical 1H candles for a single symbol
+   */
+  private async fetchSymbolCandles(symbol: string): Promise<SymbolCandles> {
+    const url = `${this.baseUrl}/api/v3/klines?symbol=${symbol}&interval=1h&limit=${this.candleLimit}`;
 
     try {
       const response = await fetch(url);
@@ -126,7 +150,7 @@ export class BinanceRestClient1H {
 
       // Transform Binance klines to Candle format
       const candles: Candle[] = klines.map((kline) => ({
-        symbol: this.symbol,
+        symbol: symbol,
         open: parseFloat(kline[1]),
         high: parseFloat(kline[2]),
         low: parseFloat(kline[3]),
@@ -138,26 +162,33 @@ export class BinanceRestClient1H {
         isHistorical: true,
       }));
 
-      return candles;
+      return { symbol, candles };
     } catch (error) {
       if (error instanceof Error) {
-        throw new Error(`Failed to fetch historical candles: ${error.message}`);
+        throw new Error(`Failed to fetch candles for ${symbol}: ${error.message}`);
       }
-      throw new Error('Failed to fetch historical candles: Unknown error');
+      throw new Error(`Failed to fetch candles for ${symbol}: Unknown error`);
     }
   }
 
   /**
-   * Calculate market regime from 1H candles
+   * Calculate market regime from 1H candles for a specific symbol
    * Uses EMA200 and ADX14
    */
-  private calculateRegime(candles: Candle[]): MarketRegime1HUpdated {
+  private calculateRegime(symbol: string, candles: Candle[]): MarketRegime1HUpdated {
+    const ema = this.emaIndicators.get(symbol);
+    const adx = this.adxIndicators.get(symbol);
+
+    if (!ema || !adx) {
+      throw new Error(`Indicators not initialized for symbol: ${symbol}`);
+    }
+
     // Calculate EMA200
-    const emaValues = this.ema.calculate(candles);
+    const emaValues = ema.calculate(candles);
     const currentEMA200 = emaValues[emaValues.length - 1];
 
     // Calculate ADX14
-    const adxValues = this.adx.calculate(candles);
+    const adxValues = adx.calculate(candles);
     const currentADX14 = adxValues[adxValues.length - 1];
 
     // Get current price (last close)
@@ -166,6 +197,7 @@ export class BinanceRestClient1H {
     if (currentEMA200 === null || currentADX14 === null) {
       // Fallback if indicators can't be calculated
       return {
+        symbol,
         regime: 'RANGING',
         trendDirection: 'NEUTRAL',
         confidence: 0,
@@ -200,6 +232,7 @@ export class BinanceRestClient1H {
     }
 
     return {
+      symbol,
       regime,
       trendDirection,
       confidence,

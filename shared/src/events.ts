@@ -25,6 +25,7 @@ export interface SignalGenerated {
 }
 
 export interface MarketRegime1HUpdated {
+  symbol: string;
   regime: 'TRENDING_UP' | 'TRENDING_DOWN' | 'RANGING';
   trendDirection: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
   confidence: number;
