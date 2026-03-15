@@ -66,9 +66,12 @@ export function ChartPanel({ candles, indicators }: ChartPanelProps) {
       wickDownColor: '#ef5350',
     });
 
-    // Transform candles to chart format
+    // Get timezone offset in seconds (positive means behind UTC, negative means ahead)
+    const timezoneOffsetSeconds = new Date().getTimezoneOffset() * 60;
+    
+    // Transform candles to chart format with local timezone
     const chartData = uniqueCandles.map((candle) => ({
-      time: (candle.timestamp / 1000) as Time,
+      time: ((candle.timestamp / 1000) - timezoneOffsetSeconds) as Time,
       open: candle.open,
       high: candle.high,
       low: candle.low,
@@ -94,7 +97,7 @@ export function ChartPanel({ candles, indicators }: ChartPanelProps) {
       const emaData = uniqueEmaSeries
         .filter((point) => point.value !== null && point.value !== undefined)
         .map((point) => ({
-          time: (point.timestamp / 1000) as Time,
+          time: ((point.timestamp / 1000) - timezoneOffsetSeconds) as Time,
           value: point.value as number,
         }));
 
@@ -120,7 +123,7 @@ export function ChartPanel({ candles, indicators }: ChartPanelProps) {
       const vwapData = uniqueVwapSeries
         .filter((point) => point.value !== null && point.value !== undefined)
         .map((point) => ({
-          time: (point.timestamp / 1000) as Time,
+          time: ((point.timestamp / 1000) - timezoneOffsetSeconds) as Time,
           value: point.value as number,
         }));
 
@@ -149,7 +152,7 @@ export function ChartPanel({ candles, indicators }: ChartPanelProps) {
       const prevClose = index > 0 ? uniqueCandles[index - 1].close : candle.open;
       const isUp = candle.close >= prevClose;
       return {
-        time: (candle.timestamp / 1000) as Time,
+        time: ((candle.timestamp / 1000) - timezoneOffsetSeconds) as Time,
         value: candle.volume,
         color: isUp ? '#26a69a' : '#ef5350',
       };

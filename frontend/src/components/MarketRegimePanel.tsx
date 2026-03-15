@@ -107,7 +107,7 @@ export const MarketRegimePanel: React.FC<MarketRegimePanelProps> = ({ regime }) 
       </div>
       <div style={styles.explanation}>
         <small>
-          Based on 1H timeframe: EMA200 + ADX
+          Based on 15m timeframe: EMA 20 + ADX
           <br />
           Signals filtered to trade only with the trend
         </small>
