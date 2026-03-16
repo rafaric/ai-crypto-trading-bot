@@ -80,7 +80,6 @@ export class BinanceWsClient {
 
         // Emit only when candle closes (isClosed: true)
         if (candle.isClosed) {
-          console.log(`🕯️ Binance candle closed: ${candle.symbol} @ $${candle.close.toFixed(2)} (O:${candle.open.toFixed(2)} H:${candle.high.toFixed(2)} L:${candle.low.toFixed(2)})`);
           this.eventBus.publish('candle_closed', candle);
         }
       }

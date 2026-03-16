@@ -1,8 +1,9 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { EventBus } from '../core/EventBus';
-import { Candle, SignalGenerated } from '../../../shared/src/events';
+import { Candle, SignalGenerated, Trade, AccountSummary } from '../../../shared/src/events';
 import { IndicatorsUpdatedEvent } from '../engine/IndicatorEngine';
 import { MarketRegimeEvent } from '../engine/MarketRegimeDetector';
+import { PaperTradingEngine } from '../execution/PaperTradingEngine';
 
 export class FrontendGateway {
   private wss: WebSocketServer;
@@ -11,12 +12,14 @@ export class FrontendGateway {
   private unsubscribeIndicators: (() => void) | null = null;
   private unsubscribeSignal: (() => void) | null = null;
   private unsubscribeRegime: (() => void) | null = null;
+  private unsubscribeTrade: (() => void) | null = null;
+  private unsubscribeAccount: (() => void) | null = null;
   private candlesCache: Map<string, Candle[]> = new Map();
   private readonly MAX_CACHED_CANDLES = 300;
   private latestIndicators: Map<string, IndicatorsUpdatedEvent> = new Map();
-  private latestRegime: MarketRegimeEvent | null = null;
+  private latestRegimes: Map<string, MarketRegimeEvent> = new Map();
 
-  constructor(private eventBus: EventBus, port: number = 8081) {
+  constructor(private eventBus: EventBus, private paperTradingEngine: PaperTradingEngine, port: number = 8081) {
     this.wss = new WebSocketServer({ port });
 
     // Handle new WebSocket connections
@@ -47,9 +50,34 @@ export class FrontendGateway {
         ws.send(JSON.stringify({ type: 'indicators_updated', payload: indicators }));
       }
 
-      // Send latest market regime if available
-      if (this.latestRegime) {
-        ws.send(JSON.stringify({ type: 'market_regime_changed', payload: this.latestRegime }));
+      // Send latest market regimes for all pairs
+      for (const [symbol, regime] of this.latestRegimes) {
+        ws.send(JSON.stringify({ type: 'market_regime_changed', payload: regime }));
+      }
+
+      // Send current open positions to new client
+      const allPositions = this.paperTradingEngine.getAllPositions();
+      const openPositions: any[] = [];
+      allPositions.forEach((positions, symbol) => {
+        for (const pos of positions) {
+          if (pos.status === 'OPEN') {
+            openPositions.push({
+              id: `${symbol}-${pos.timestamp}`,
+              symbol,
+              side: pos.action,
+              entryPrice: pos.price,
+              quantity: pos.quantity,
+              stopLoss: pos.slPrice,
+              takeProfit: pos.tpPrice,
+              status: 'OPEN',
+              openTime: pos.timestamp,
+            });
+          }
+        }
+      });
+      if (openPositions.length > 0) {
+        console.log(`📊 Sending ${openPositions.length} open positions to new client`);
+        ws.send(JSON.stringify({ type: 'positions_update', payload: openPositions }));
       }
 
       // Heartbeat to detect dead connections
@@ -75,6 +103,54 @@ export class FrontendGateway {
         console.error('WebSocket client error:', error);
         clearInterval(heartbeat);
         this.clients.delete(ws);
+      });
+
+      // Handle incoming messages from frontend
+      ws.on('message', (data: Buffer) => {
+        try {
+          const message = JSON.parse(data.toString());
+          
+          if (message.type === 'close_position') {
+            const { positionId, symbol } = message.payload;
+            console.log(`🔴 Close position request: ${symbol} (ID: ${positionId})`);
+            
+            const closedTrade = this.paperTradingEngine.closePosition(symbol, positionId);
+            
+            console.log('[DEBUG] FrontendGateway.closePosition result:', closedTrade);
+            
+            if (closedTrade) {
+              // Send updated positions to all clients
+              const allPositions = this.paperTradingEngine.getAllPositions();
+              const openPositions: any[] = [];
+              allPositions.forEach((positions, sym) => {
+                for (const pos of positions) {
+                  if (pos.status === 'OPEN') {
+                    openPositions.push({
+                      id: `${sym}-${pos.timestamp}`,
+                      symbol: sym,
+                      side: pos.action,
+                      entryPrice: pos.price,
+                      quantity: pos.quantity,
+                      stopLoss: pos.slPrice,
+                      takeProfit: pos.tpPrice,
+                      status: 'OPEN',
+                      openTime: pos.timestamp,
+                    });
+                  }
+                }
+              });
+              console.log('[DEBUG] Broadcasting positions_update:', openPositions);
+              this.broadcast('positions_update', openPositions);
+            } else {
+              ws.send(JSON.stringify({ 
+                type: 'error', 
+                payload: { message: `Failed to close position ${positionId}` }
+              }));
+            }
+          }
+        } catch (e) {
+          console.error('Failed to parse client message:', e);
+        }
       });
     });
 
@@ -111,8 +187,17 @@ export class FrontendGateway {
     });
 
     this.unsubscribeRegime = this.eventBus.subscribe<MarketRegimeEvent>('market_regime_changed', (payload) => {
-      this.latestRegime = payload;
+      // Store latest regime per symbol for late-connecting clients
+      this.latestRegimes.set(payload.symbol, payload);
       this.broadcast('market_regime_changed', payload);
+    });
+
+    this.unsubscribeTrade = this.eventBus.subscribe<Trade>('trade_executed', (payload) => {
+      this.broadcast('trade_executed', payload);
+    });
+
+    this.unsubscribeAccount = this.eventBus.subscribe<AccountSummary>('account_update', (payload) => {
+      this.broadcast('account_update', payload);
     });
   }
 
@@ -127,8 +212,8 @@ export class FrontendGateway {
       }
     }
 
-    // Always log candle, signal, and regime broadcasts for debugging
-    if (type === 'candle_closed' || type === 'SignalGenerated' || type === 'market_regime_changed') {
+    // Log signal and regime broadcasts for debugging (candles are too frequent)
+    if (type === 'SignalGenerated' || type === 'market_regime_changed') {
       console.log(`📡 Broadcast ${type} to ${sentCount} clients`);
     }
   }
@@ -138,6 +223,8 @@ export class FrontendGateway {
     if (this.unsubscribeIndicators) this.unsubscribeIndicators();
     if (this.unsubscribeSignal) this.unsubscribeSignal();
     if (this.unsubscribeRegime) this.unsubscribeRegime();
+    if (this.unsubscribeTrade) this.unsubscribeTrade();
+    if (this.unsubscribeAccount) this.unsubscribeAccount();
 
     // Close all client connections
     for (const client of this.clients) {

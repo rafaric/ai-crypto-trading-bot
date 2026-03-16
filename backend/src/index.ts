@@ -21,7 +21,6 @@ class InMemoryTradeRepository implements ITradeRepository {
 
   async saveTrade(trade: Trade): Promise<void> {
     this.trades.push(trade);
-    eventBus.publish('trade_executed', trade);
   }
 
   getTrades(): Trade[] {
@@ -38,7 +37,13 @@ console.log(`📊 Configured trading pairs: ${tradingPairs.join(', ')}`);
 
 // Initialize core components
 const eventBus = new EventBus();
-const frontendGateway = new FrontendGateway(eventBus, 8081);
+
+// Initialize PaperTradingEngine first (needed by FrontendGateway)
+const tradeRepository = new InMemoryTradeRepository();
+const paperTradingEngine = new PaperTradingEngine(tradeRepository);
+
+// Initialize FrontendGateway with PaperTradingEngine reference
+const frontendGateway = new FrontendGateway(eventBus, paperTradingEngine, 8081);
 
 // Initialize IndicatorEngine with multi-pair support
 const indicatorEngine = new IndicatorEngine(eventBus);
@@ -50,9 +55,7 @@ const regimeDetector = new MarketRegimeDetector(eventBus);
 console.log('✅ MarketRegimeDetector initialized - tracking regime per pair');
 console.log('   Listening to 1H regime updates with EMA200 + ADX for each pair');
 
-// Initialize PaperTradingEngine with multi-pair support
-const tradeRepository = new InMemoryTradeRepository();
-const paperTradingEngine = new PaperTradingEngine(tradeRepository);
+// Start PaperTradingEngine event listening
 paperTradingEngine.startListening(eventBus);
 console.log('✅ PaperTradingEngine initialized - multi-pair execution enabled');
 console.log('   Max 3 concurrent trades across all pairs\n');
@@ -83,16 +86,24 @@ if (telegramConfigured) {
 // Subscribe to events to log activity per pair
 const candleCounts: Map<string, number> = new Map();
 const signalCounts: Map<string, number> = new Map();
+let candleCounter = 0;
 
 eventBus.subscribe<Candle>('candle_closed', (candle) => {
   const symbol = candle.symbol;
   const currentCount = candleCounts.get(symbol) || 0;
   candleCounts.set(symbol, currentCount + 1);
+  candleCounter++;
   
   const totalCandles = Array.from(candleCounts.values()).reduce((a, b) => a + b, 0);
   const totalSignals = Array.from(signalCounts.values()).reduce((a, b) => a + b, 0);
   
-  process.stdout.write(`\r📊 Total candles: ${totalCandles} | Total signals: ${totalSignals} | Active pairs: ${candleCounts.size}`);
+  // Log summary every 50 candles instead of every candle
+  if (candleCounter % 50 === 0) {
+    process.stdout.write(`\r📊 Total candles: ${totalCandles} | Total signals: ${totalSignals} | Active pairs: ${candleCounts.size}`);
+  }
+  
+  // Update market data for Telegram summary
+  telegramService.updateMarketData(symbol, candle.close, null);
 });
 
 eventBus.subscribe('indicators_updated', (event) => {
@@ -126,6 +137,14 @@ eventBus.subscribe<MarketRegimeEvent>('market_regime_changed', (regime) => {
   console.log(`   Confidence: ${(regime.confidence * 100).toFixed(1)}%`);
   console.log(`   EMA200: $${regime.ema200?.toFixed(2) || 'N/A'}`);
   console.log(`   ADX14: ${regime.adx14?.toFixed(2) || 'N/A'}`);
+  
+  // Update market regime for Telegram summary
+  const currentData = telegramService['marketData'].get(regime.symbol);
+  telegramService.updateMarketData(
+    regime.symbol,
+    currentData?.price || regime.price || 0,
+    regime.regime
+  );
 });
 
 // Track recent trades to prevent spam
@@ -153,6 +172,9 @@ eventBus.subscribe<Trade>('trade_executed', async (trade) => {
   
   // Update last trade time
   recentTrades.set(tradeKey, now);
+  
+  // Record trade for daily summary
+  telegramService.recordTrade(trade.symbol, trade.action, trade.price, 0);
   
   // Send Telegram notification
   await telegramService.sendTradeNotification({
@@ -247,6 +269,7 @@ process.on('SIGINT', () => {
   regimeDetector.unsubscribe();
   paperTradingEngine.stopListening();
   frontendGateway.close();
+  telegramService.stop();
   if (binanceWsClient) {
     binanceWsClient.close();
     console.log('✅ Binance WebSocket connection closed');

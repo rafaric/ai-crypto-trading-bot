@@ -4,6 +4,34 @@ import type { Candle, SignalGenerated } from '../../../shared/src/events';
 export const TRADING_PAIRS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT'] as const;
 export type TradingPair = (typeof TRADING_PAIRS)[number];
 
+export interface Trade {
+  id: string;
+  symbol: string;
+  side: 'BUY' | 'SELL';
+  entryPrice: number;
+  exitPrice?: number;
+  quantity: number;
+  stopLoss?: number;
+  takeProfit?: number;
+  status: 'OPEN' | 'CLOSED';
+  pnl?: number;
+  pnlPercent?: number;
+  result?: 'WIN' | 'LOSS';
+  openTime: number;
+  closeTime?: number;
+}
+
+export interface AccountSummary {
+  initialBalance: number;
+  currentBalance: number;
+  totalPnl: number;
+  totalPnlPercent: number;
+  winRate: number;
+  totalTrades: number;
+  winningTrades: number;
+  losingTrades: number;
+}
+
 export interface IndicatorSeries {
   timestamp: number;
   value: number;
@@ -56,9 +84,14 @@ export interface UseMarketDataReturn {
   marketRegime: MarketRegime | null;
   connected: boolean;
   isLoading: boolean;
+  // Trade/account data
+  trades: Trade[];
+  account: AccountSummary;
+  // Send message to backend
+  sendMessage: (type: string, payload: any) => void;
 }
 
-const MAX_CANDLES_PER_PAIR = 200;
+const MAX_CANDLES_PER_PAIR = 201;
 
 export function useMarketData(): UseMarketDataReturn {
   const [selectedPair, setSelectedPair] = useState<TradingPair>('BTCUSDT');
@@ -66,6 +99,19 @@ export function useMarketData(): UseMarketDataReturn {
   const [signals, setSignals] = useState<SignalGenerated[]>([]);
   const [connected, setConnected] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  
+  // Trade and account state
+  const [trades, setTrades] = useState<Trade[]>([]);
+  const [account, setAccount] = useState<AccountSummary>({
+    initialBalance: 500,
+    currentBalance: 500,
+    totalPnl: 0,
+    totalPnlPercent: 0,
+    winRate: 0,
+    totalTrades: 0,
+    winningTrades: 0,
+    losingTrades: 0,
+  });
   
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -194,12 +240,6 @@ export function useMarketData(): UseMarketDataReturn {
               const indicatorsData: IndicatorsUpdate = message.payload;
               const symbol = indicatorsData.symbol as TradingPair;
               
-              console.log('📥 Received indicators:', {
-                symbol,
-                emaSeries: indicatorsData.indicators?.ema?.series?.length,
-                vwapSeries: indicatorsData.indicators?.vwap?.series?.length,
-              });
-              
               setAllPairs((prev) => {
                 const updated = new Map(prev);
                 const pairData = updated.get(symbol);
@@ -256,6 +296,43 @@ export function useMarketData(): UseMarketDataReturn {
                 }
                 return updated;
               });
+              break;
+            }
+
+            case 'trade_executed': {
+              const trade: Trade = message.payload;
+              console.log('[DEBUG] Received trade_executed:', trade);
+              setTrades((prev) => {
+                const existing = prev.find((t) => t.id === trade.id);
+                if (existing) {
+                  return prev.map((t) => (t.id === trade.id ? trade : t));
+                }
+                return [...prev, trade];
+              });
+              break;
+            }
+
+            case 'positions_update': {
+              const positions: Trade[] = message.payload;
+              console.log('[DEBUG] Received positions_update:', positions);
+              setTrades((prev) => {
+                // Get IDs of new positions
+                const newPositionIds = new Set(positions.map(p => p.id));
+                // Keep existing OPEN trades that are NOT in the new positions list
+                const existingOpenTrades = prev.filter(
+                  (t) => t.status === 'OPEN' && !newPositionIds.has(t.id)
+                );
+                // Merge: existing OPEN trades + new positions from backend
+                const closedTrades = prev.filter((t) => t.status !== 'OPEN');
+                return [...closedTrades, ...existingOpenTrades, ...positions];
+              });
+              break;
+            }
+
+            case 'account_update': {
+              const accountUpdate: AccountSummary = message.payload;
+              console.log('[DEBUG] Received account_update:', accountUpdate);
+              setAccount(accountUpdate);
               break;
             }
           }
@@ -315,5 +392,16 @@ export function useMarketData(): UseMarketDataReturn {
     marketRegime: currentPairData.regime,
     connected,
     isLoading,
+    // Trade/account data
+    trades,
+    account,
+    // Send message to backend
+    sendMessage: (type: string, payload: any) => {
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type, payload }));
+      } else {
+        console.warn('WebSocket not connected, cannot send message');
+      }
+    },
   };
 }

@@ -299,8 +299,10 @@ describe('PaperTradingEngine', () => {
       expect(engine.getTotalOpenTrades()).toBe(2);
 
       // Close BTC position
-      const closed = engine.closePosition('BTCUSDT', 0);
-      expect(closed).toBe(true);
+      const btcPositions = engine.getPositions('BTCUSDT');
+      const positionId = btcPositions[0] ? `BTCUSDT-${btcPositions[0].timestamp}` : undefined;
+      const closed = engine.closePosition('BTCUSDT', positionId);
+      expect(closed).not.toBeNull();
       expect(engine.getTotalOpenTrades()).toBe(1);
       expect(engine.getPositions('BTCUSDT')).toHaveLength(0);
       expect(engine.getPositions('ETHUSDT')).toHaveLength(1);
@@ -347,9 +349,9 @@ describe('PaperTradingEngine', () => {
       expect(engine.getPositions('BTCUSDT')).toHaveLength(0);
     });
 
-    it('should return false when closing non-existent position', () => {
-      const result = engine.closePosition('BTCUSDT', 0);
-      expect(result).toBe(false);
+    it('should return null when closing non-existent position', () => {
+      const result = engine.closePosition('BTCUSDT', 'BTCUSDT-123456');
+      expect(result).toBeNull();
     });
 
     it('should return 0 when closing positions for pair with no trades', () => {

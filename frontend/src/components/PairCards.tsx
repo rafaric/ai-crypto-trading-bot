@@ -1,21 +1,21 @@
 import { cn } from '../utils/cn';
 import type { TradingPair } from '../hooks/useMarketData';
 
-interface PairSummaryItem {
+interface PairCardItem {
   symbol: TradingPair;
   price: number | null;
   change24h: number | null;
   regime: 'TRENDING_UP' | 'TRENDING_DOWN' | 'RANGING' | null;
 }
 
-interface PairSummaryProps {
-  pairs: PairSummaryItem[];
+interface PairCardsProps {
+  pairs: PairCardItem[];
   selectedPair: TradingPair;
   onSelect: (pair: TradingPair) => void;
 }
 
-export function PairSummary({ pairs, selectedPair, onSelect }: PairSummaryProps) {
-  const getRegimeStyles = (regime: PairSummaryItem['regime']) => {
+export function PairCards({ pairs, selectedPair, onSelect }: PairCardsProps) {
+  const getRegimeStyles = (regime: PairCardItem['regime']) => {
     switch (regime) {
       case 'TRENDING_UP':
         return {
@@ -48,7 +48,7 @@ export function PairSummary({ pairs, selectedPair, onSelect }: PairSummaryProps)
     }
   };
 
-  const getRegimeLabel = (regime: PairSummaryItem['regime']) => {
+  const getRegimeLabel = (regime: PairCardItem['regime']) => {
     switch (regime) {
       case 'TRENDING_UP':
         return 'UP';

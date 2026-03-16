@@ -99,7 +99,7 @@ describe('Integration: End-to-End Pipeline', () => {
     expect(indicatorsUpdatedEvents[0].indicators).toHaveProperty('candlestick');
 
     // Verify 2: IndicatorEngine has cached all candles
-    const cachedCandles = indicatorEngine.getCandlesCache();
+    const cachedCandles = indicatorEngine.getCandlesCache('BTC/USDT');
     expect(cachedCandles.length).toBe(10);
     expect(cachedCandles[0].close).toBe(50000);
     expect(cachedCandles[9].close).toBe(50700);
@@ -203,7 +203,7 @@ describe('Integration: End-to-End Pipeline', () => {
     expect(errors.length).toBe(0);
     
     // Verify cache is properly bounded
-    const cachedCandles = indicatorEngine.getCandlesCache();
+    const cachedCandles = indicatorEngine.getCandlesCache('BTC/USDT');
     expect(cachedCandles.length).toBe(50);
     expect(cachedCandles.length).toBeLessThanOrEqual(300); // Max cache size
 

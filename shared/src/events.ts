@@ -37,3 +37,31 @@ export interface MarketRegime1HUpdated {
 
 // Deprecated: Use Candle instead
 export type MarketTick = Candle;
+
+export interface Trade {
+  id: string;
+  symbol: string;
+  side: 'BUY' | 'SELL';
+  entryPrice: number;
+  exitPrice?: number;
+  quantity: number;
+  stopLoss?: number;
+  takeProfit?: number;
+  status: 'OPEN' | 'CLOSED';
+  pnl?: number;
+  pnlPercent?: number;
+  result?: 'WIN' | 'LOSS';
+  openTime: number;
+  closeTime?: number;
+}
+
+export interface AccountSummary {
+  initialBalance: number;
+  currentBalance: number;
+  totalPnl: number;
+  totalPnlPercent: number;
+  winRate: number;
+  totalTrades: number;
+  winningTrades: number;
+  losingTrades: number;
+}

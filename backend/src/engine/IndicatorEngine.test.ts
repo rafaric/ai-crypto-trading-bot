@@ -364,7 +364,7 @@ describe('IndicatorEngine', () => {
 
       // Re-mock CandlestickPatterns to return a bullish signal
       const { CandlestickPatterns } = require('../indicators/CandlestickPatterns');
-      CandlestickPatterns.scan.mockReturnValueOnce([
+      jest.spyOn(CandlestickPatterns, 'scan').mockImplementation(() => [
         {
           pattern: 'Bullish Engulfing',
           type: 'bullish',
@@ -425,7 +425,7 @@ describe('IndicatorEngine', () => {
 
       // Re-mock CandlestickPatterns to return a bearish signal
       const { CandlestickPatterns } = require('../indicators/CandlestickPatterns');
-      CandlestickPatterns.scan.mockReturnValueOnce([
+      jest.spyOn(CandlestickPatterns, 'scan').mockImplementation(() => [
         {
           pattern: 'Bearish Engulfing',
           type: 'bearish',
@@ -526,7 +526,7 @@ describe('IndicatorEngine', () => {
     it('should NOT emit signals when no regime is set for that pair', () => {
       // Mock bullish pattern
       const { CandlestickPatterns } = require('../indicators/CandlestickPatterns');
-      CandlestickPatterns.scan.mockReturnValueOnce([
+      jest.spyOn(CandlestickPatterns, 'scan').mockImplementation(() => [
         {
           pattern: 'Bullish Engulfing',
           type: 'bullish',
@@ -572,7 +572,7 @@ describe('IndicatorEngine', () => {
 
       // Mock bullish pattern
       const { CandlestickPatterns } = require('../indicators/CandlestickPatterns');
-      CandlestickPatterns.scan.mockReturnValueOnce([
+      jest.spyOn(CandlestickPatterns, 'scan').mockImplementation(() => [
         {
           pattern: 'Bullish Engulfing',
           type: 'bullish',
@@ -619,7 +619,7 @@ describe('IndicatorEngine', () => {
 
       // Mock bullish pattern (should be filtered)
       const { CandlestickPatterns } = require('../indicators/CandlestickPatterns');
-      CandlestickPatterns.scan.mockReturnValueOnce([
+      jest.spyOn(CandlestickPatterns, 'scan').mockImplementation(() => [
         {
           pattern: 'Bullish Engulfing',
           type: 'bullish',

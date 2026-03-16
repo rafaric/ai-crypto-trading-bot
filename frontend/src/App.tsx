@@ -1,8 +1,8 @@
 import { ChartPanel } from './components/ChartPanel';
 import { SignalsPanel } from './components/SignalsPanel';
 import { MarketRegimePanel } from './components/MarketRegimePanel';
-import { PairSelector } from './components/PairSelector';
-import { PairSummary } from './components/PairSummary';
+import { PairCards } from './components/PairCards';
+import { TradeHistory } from './components/TradeHistory';
 import { useMarketData } from './hooks/useMarketData';
 
 function App() {
@@ -15,7 +15,9 @@ function App() {
     indicators,
     marketRegime,
     connected,
-    isLoading,
+    trades,
+    account,
+    sendMessage,
   } = useMarketData();
 
   // Convert Map to array for PairSelector
@@ -56,19 +58,9 @@ function App() {
         </div>
       </header>
 
-      {/* Pair Selector - Mobile Dropdown / Desktop Tabs */}
+      {/* Pair Selection Cards */}
       <div className="mb-6">
-        <PairSelector
-          pairs={pairsArray}
-          selectedPair={selectedPair}
-          onSelect={setSelectedPair}
-          isLoading={isLoading}
-        />
-      </div>
-
-      {/* Optional: Mini Pair Summary Cards */}
-      <div className="mb-6">
-        <PairSummary
+        <PairCards
           pairs={pairsArray}
           selectedPair={selectedPair}
           onSelect={setSelectedPair}
@@ -251,6 +243,7 @@ function App() {
             regime={marketRegime}
           />
           <SignalsPanel selectedPair={selectedPair} signals={signals} />
+          <TradeHistory trades={trades} account={account} connected={connected} sendMessage={sendMessage} />
 
           {/* Stats */}
           <div className="bg-white rounded-lg shadow p-4 md:p-6">

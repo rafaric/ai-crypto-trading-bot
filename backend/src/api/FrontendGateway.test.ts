@@ -3,6 +3,11 @@ import { EventBus } from '../core/EventBus';
 import { WebSocketServer, WebSocket } from 'ws';
 import { Candle, SignalGenerated } from '../../../shared/src/events';
 import { IndicatorsUpdatedEvent } from '../engine/IndicatorEngine';
+import { PaperTradingEngine } from '../execution/PaperTradingEngine';
+
+const mockPaperTradingEngine = {
+  getAllPositions: () => new Map(),
+} as unknown as PaperTradingEngine;
 
 describe('FrontendGateway', () => {
   let gateway: FrontendGateway;
@@ -21,12 +26,12 @@ describe('FrontendGateway', () => {
   it('should start a WebSocket server on the specified port', () => {
     // Just verify it doesn't throw
     expect(() => {
-      gateway = new FrontendGateway(eventBus, 8081);
+      gateway = new FrontendGateway(eventBus, mockPaperTradingEngine, 8081);
     }).not.toThrow();
   });
 
   it('should broadcast candle_closed events', (done) => {
-    gateway = new FrontendGateway(eventBus, 8082);
+    gateway = new FrontendGateway(eventBus, mockPaperTradingEngine, 8082);
     
     const candle: Candle = {
       symbol: 'BTC/USDT',
@@ -47,7 +52,7 @@ describe('FrontendGateway', () => {
   });
 
   it('should broadcast indicators_updated events', (done) => {
-    gateway = new FrontendGateway(eventBus, 8083);
+    gateway = new FrontendGateway(eventBus, mockPaperTradingEngine, 8083);
     
     const indicatorsData: IndicatorsUpdatedEvent = {
       symbol: 'BTC/USDT',
@@ -69,7 +74,7 @@ describe('FrontendGateway', () => {
   });
 
   it('should broadcast SignalGenerated events', (done) => {
-    gateway = new FrontendGateway(eventBus, 8084);
+    gateway = new FrontendGateway(eventBus, mockPaperTradingEngine, 8084);
     
     const signal: SignalGenerated = {
       symbol: 'BTC/USDT',

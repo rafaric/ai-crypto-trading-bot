@@ -62,12 +62,20 @@ export interface SignalDetectedEvent {
 }
 
 const MAX_CANDLES_CACHE = 300;
+const MAX_5M_BUFFER = 100;
 
 export class IndicatorEngine {
   private eventBus: EventBus;
   
   // Multi-pair support: Map of symbol -> Candle[]
   private candlesCache: Map<string, Candle[]> = new Map();
+  
+  // 5m candle buffer for aggregation to 15m
+  // Every 3 consecutive 5m candles → 1 fifteen-minute candle
+  private fiveMinuteBuffer: Map<string, Candle[]> = new Map();
+  
+  // Aggregated 15m candles for VWAP calculation
+  private fifteenMinuteCandles: Map<string, Candle[]> = new Map();
   
   private unsubscribeFn: (() => void) | null = null;
   
@@ -168,11 +176,58 @@ export class IndicatorEngine {
   }
 
   /**
-   * Handle candle_closed event - process per pair
+   * Aggregate 5m candle to 15m using 5m buffer
+   * Returns a 15m candle when we have 3 consecutive 5m candles
    */
+  private aggregateTo15m(newCandle: Candle): Candle | null {
+    const symbol = newCandle.symbol;
+    
+    // Get or create 5m buffer for this symbol
+    let buffer = this.fiveMinuteBuffer.get(symbol);
+    if (!buffer) {
+      buffer = [];
+      this.fiveMinuteBuffer.set(symbol, buffer);
+    }
+    
+    // Add new 5m candle to buffer
+    buffer.push(newCandle);
+    
+    // Keep only last 3 candles in buffer
+    if (buffer.length > 3) {
+      buffer.shift();
+    }
+    
+    // Need exactly 3 candles to create a 15m candle
+    if (buffer.length !== 3) {
+      return null;
+    }
+    
+    // Aggregate: every 3 consecutive 5m candles → 1 fifteen-minute candle
+    // OHLCV: open=first.open, high=max, low=min, close=last.close, volume=sum
+    const [c1, c2, c3] = buffer;
+    
+    const aggregated: Candle = {
+      symbol: symbol,
+      timestamp: c3.timestamp, // Use timestamp of last 5m candle
+      open: c1.open,
+      high: Math.max(c1.high, c2.high, c3.high),
+      low: Math.min(c1.low, c2.low, c3.low),
+      close: c3.close,
+      volume: c1.volume + c2.volume + c3.volume,
+      interval: '15m',
+      isHistorical: c3.isHistorical,
+    };
+    
+
+    
+    // Clear buffer after aggregation
+    buffer.length = 0;
+    
+    return aggregated;
+  }
+
   private handleCandleClosed(candle: Candle): void {
     const symbol = candle.symbol;
-    console.log(`🕯️ Processing candle: ${symbol} @ $${candle.close.toFixed(2)}`);
     
     // Get or create cache for this symbol
     let symbolCache = this.candlesCache.get(symbol);
@@ -181,7 +236,7 @@ export class IndicatorEngine {
       this.candlesCache.set(symbol, symbolCache);
     }
     
-    // Add candle to cache
+    // Add candle to 5m cache
     symbolCache.push(candle);
     
     // Maintain bounded cache (max 300 candles per pair)
@@ -189,19 +244,33 @@ export class IndicatorEngine {
       symbolCache.shift();
     }
 
-    console.log(`📊 Cache size for ${symbol}: ${symbolCache.length} candles`);
+    // Aggregate 5m → 15m for VWAP calculation
+    const fifteenMinuteCandle = this.aggregateTo15m(candle);
+    
+    // Get or create 15m candles cache
+    let fifteenMinCache = this.fifteenMinuteCandles.get(symbol);
+    if (!fifteenMinCache) {
+      fifteenMinCache = [];
+      this.fifteenMinuteCandles.set(symbol, fifteenMinCache);
+    }
+    
+    // Add 15m candle if we aggregated one
+    if (fifteenMinuteCandle) {
+      fifteenMinCache.push(fifteenMinuteCandle);
+      // Keep max 100 15m candles
+      if (fifteenMinCache.length > MAX_5M_BUFFER) {
+        fifteenMinCache.shift();
+      }
+
+    }
+
+
 
     // Calculate all indicators for this pair
-    const indicators = this.calculateAllIndicators(symbolCache);
+    // Use 15m candles for VWAP, 5m for everything else
+    const indicators = this.calculateAllIndicators(symbolCache, fifteenMinCache);
 
     // Emit indicators_updated event with pair symbol included
-    console.log('📤 Sending indicators:', {
-      symbol,
-      emaSeries: indicators.ema.series?.length,
-      vwapSeries: indicators.vwap.series?.length,
-      emaValue: indicators.ema.value,
-      vwapValue: indicators.vwap.value,
-    });
     this.eventBus.publish<IndicatorsUpdatedEvent>('indicators_updated', {
       symbol: symbol,
       indicators,
@@ -210,7 +279,6 @@ export class IndicatorEngine {
 
     // Skip signal generation for historical candles
     if (candle.isHistorical) {
-      console.log(`⏳ Skipping signal check for historical candle on ${symbol}`);
       return;
     }
 
@@ -230,9 +298,11 @@ export class IndicatorEngine {
 
   /**
    * Calculate all indicators from cache for a specific symbol
+   * @param candles - 5m candles for EMA, RSI, MACD, ATR, patterns
+   * @param fifteenMinCandles - aggregated 15m candles for VWAP calculation
    */
-  private calculateAllIndicators(candles: Candle[]): IndicatorValues {
-    // Calculate EMA (needs at least 200 periods)
+  private calculateAllIndicators(candles: Candle[], fifteenMinCandles: Candle[] = []): IndicatorValues {
+    // Calculate EMA on 5m candles (needs at least 200 periods)
     let emaValue: number | null = null;
     let emaSeries: IndicatorSeries[] = [];
     if (candles.length >= this.ema.getPeriod()) {
@@ -245,14 +315,16 @@ export class IndicatorEngine {
       }));
     }
 
-    // Calculate VWAP (works with any amount of data)
+    // Calculate VWAP on 15m aggregated candles (MTF: multi-timeframe)
+    // This gives us a smoother VWAP based on higher timeframe
     let vwapValue: number | null = null;
     let vwapSeries: IndicatorSeries[] = [];
-    if (candles.length > 0) {
-      const vwapValues = this.vwap.calculateRolling(candles);
+    const vwapSource = fifteenMinCandles.length > 0 ? fifteenMinCandles : candles;
+    if (vwapSource.length > 0) {
+      const vwapValues = this.vwap.calculateRolling(vwapSource);
       vwapValue = vwapValues[vwapValues.length - 1] ?? null;
       // Build series with timestamps for chart rendering
-      vwapSeries = candles.slice(-vwapValues.length).map((candle, index) => ({
+      vwapSeries = vwapSource.slice(-vwapValues.length).map((candle, index) => ({
         timestamp: candle.timestamp,
         value: vwapValues[index]!,
       }));
